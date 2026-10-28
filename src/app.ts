@@ -3,22 +3,13 @@ import { HTTPException } from 'hono/http-exception'
 import { createEventController } from '#/controllers/event-controller.ts'
 import { createUserController } from '#/controllers/user-controller.ts'
 import { userRoutes } from '#/routes/user-routes.ts'
-import type {
-  Clock,
-  EventRepository,
-  IdGenerator,
-} from '#/domain/event-repository.ts'
-import { makeId } from '#/domain/ids.ts'
+import type { Services } from '#/application/services.ts'
 import { eventRoutes } from '#/routes/event-routes.ts'
 
-export function createApp(
-  repository: EventRepository,
-  clock: Clock = { now: () => new Date() },
-  ids: IdGenerator = { next: makeId },
-) {
+export function createApp(services: Services) {
   const app = new Hono()
-  app.route('/', eventRoutes(createEventController(repository, clock, ids)))
-  app.route('/', userRoutes(createUserController(repository)))
+  app.route('/', eventRoutes(createEventController(services)))
+  app.route('/', userRoutes(createUserController(services)))
   app.notFound((c) =>
     c.json({ error: { code: 'NOT_FOUND', message: 'Route not found' } }, 404),
   )

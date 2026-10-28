@@ -1,5 +1,5 @@
 import type { Context } from 'hono'
-import type { ApplicationError } from '#/domain/event-repository.ts'
+import type { ApplicationError } from '#/application/ports.ts'
 import { Conflict, NotFound, Unauthorized } from '#/domain/errors.ts'
 import type { Result } from '#/shared-kernel/result.ts'
 

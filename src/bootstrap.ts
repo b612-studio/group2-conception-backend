@@ -1,5 +1,6 @@
 import { RedisClient, SQL } from 'bun'
 import { createApp } from '#/app.ts'
+import { createServices } from '#/application/services.ts'
 import { PostgresEventRepository } from '#/infrastructure/postgres-event-repository.ts'
 import { ValkeyEventRepository } from '#/infrastructure/valkey-event-repository.ts'
 import { FunctionalValkeyEventRepository } from '#/infrastructure/valkey-event-repository-functional.ts'
@@ -50,8 +51,9 @@ function createPersistence(
 }
 
 const persistence = createPersistence(backend)
+const services = createServices(persistence.repository)
 const port = Number(process.env.PORT ?? 3000)
-const app = createApp(persistence.repository)
+const app = createApp(services)
 const server = Bun.serve({
   hostname: '127.0.0.1',
   port,

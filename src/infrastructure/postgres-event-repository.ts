@@ -3,7 +3,7 @@ import type {
   ApplicationError,
   EventFilter,
   EventRepository,
-} from '#/domain/event-repository.ts'
+} from '#/application/ports.ts'
 import type { Event } from '#/domain/event.ts'
 import type { Reservation } from '#/domain/reservation.ts'
 import type { EventId, ReservationId, UserId } from '#/domain/ids.ts'

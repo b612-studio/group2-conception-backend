@@ -6,7 +6,7 @@ import {
   expect,
   test,
 } from 'bun:test'
-import type { EventRepository } from '#/domain/event-repository.ts'
+import type { EventRepository } from '#/application/ports.ts'
 import { Event, type EventData } from '#/domain/event.ts'
 import { Reservation, type ReservationData } from '#/domain/reservation.ts'
 import { EventId, ReservationId, UserId, VenueId } from '#/domain/ids.ts'

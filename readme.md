@@ -1,11 +1,11 @@
 # Day 2: Events REST API
 
-A Hono API for events and reservations. REST controllers orchestrate domain operations
-and persistence through a repository interface. PostgreSQL is the default;
+A Hono API for events and reservations. REST controllers call application operations,
+which enforce domain rules through a repository interface. PostgreSQL is the default;
 Valkey and in-memory implementations are also available.
 
-This is step `01-controller-logic`. Controllers handle creation, updates, reservations
-and cancellation directly. There is no application layer or response DTO layer.
+This is step `02-application-layer`. Controllers delegate to application operations,
+but serialize domain data directly. There are no response DTO schemas or presenters.
 Request validation remains at the HTTP boundary.
 
 ## Run locally
@@ -116,9 +116,9 @@ or adding identity does not.
 ## Architecture
 
 ```text
-REST routes -> Controllers -> Repository
-                    |
-               Domain rules
+REST routes -> Controllers -> Application operations -> Repository
+                                       |
+                                  Domain rules
 ```
 
 ```text
@@ -126,8 +126,9 @@ src/
   bootstrap.ts          Composition root and local HTTP server
   app.ts                Hono delivery setup and HTTP error mapping
   routes/               REST routes and request validation
-  controllers/          Workflow orchestration, HTTP responses and errors
-  domain/               Event and reservation rules, identifiers, repository interface
+  controllers/          REST translation and application invocation
+  application/          Focused handlers, reads, identity and repository interface
+  domain/               Event and reservation rules; branded UUID-v7 identifiers
   shared-kernel/        Option and Result, without framework dependencies
   infrastructure/       PostgreSQL, Valkey and in-memory repositories, entity mappings
   validation.ts         Valibot request schemas and branded ID conversion
@@ -135,7 +136,7 @@ sql/init.sql            PostgreSQL schema and seeds
 ```
 
 Imports use `#/*`, configured in `package.json` and `tsconfig.json` as in `hono-deep`.
-The domain does not depend on Hono or Valibot.
+The domain and application layers do not depend on Hono or Valibot.
 REST validates inputs at runtime using Valibot schemas. Controllers return domain
 data directly, converting reservation Option values to a date or null. JSON encoding
 serializes dates as strings. Responses have no separate schema or validation.
@@ -167,7 +168,7 @@ Cancelling locks the reservation, checks ownership, and records the cancellation
 of deleting it.
 
 `InMemoryEventRepository` implements the same port for fast backend tests. Supply its
-known user and venue IDs as sets, then pass it to `createApp`. It has no artificial
+known user and venue IDs as sets, then pass it to `createServices`. It has no artificial
 await between checking capacity and writing, so each mutation runs in one JS turn.
 It is a test fake, not evidence that PostgreSQL transactions work.
 
@@ -247,8 +248,7 @@ braces around conditionals and loops. `check` checks formatting, lint rules and 
 
 `test` runs the whole suite and requires Docker for repository contracts.
 `test:transports` runs REST tests against an ephemeral loopback HTTP server with an
-in-memory repository. Backend tests exercise controller workflows through HTTP.
-Domain, backend and retry tests also need no external database.
+in-memory repository. Domain, backend and retry tests also need no external database.
 Tests never touch the demo database.
 
 Tests execute Given/When/Then functions: `given(setup).when(action).then(assertion)`
@@ -262,7 +262,8 @@ mapping, concurrent last-seat booking, capacity rejection, ownership and repeate
 three implementations: in-memory, PostgreSQL and the original Valkey adapter.
 The functional Valkey variant is not part of this comparison.
 
-Tests call the `EventRepository` interface directly, without controllers. They check returned values, persisted state, callback inputs,
+Tests call the `EventRepository` interface directly, without application services
+or handlers. They check returned values, persisted state, callback inputs,
 reference errors, filtering and ordering, ownership and concurrent mutation
 serialization. Callback failures must leave storage unchanged. Reserved seat
 counts must include only active reservations for the requested event.

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { createApp } from '#/app.ts'
+import { createServices } from '#/application/services.ts'
 import { InMemoryEventRepository } from '#/infrastructure/in-memory-event-repository.ts'
 import { UserId, VenueId, EventId } from '#/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'
@@ -16,9 +17,9 @@ let server: ReturnType<typeof Bun.serve>
 let url: string
 
 beforeAll(() => {
-  const app = createApp(repository, {
-    now: () => new Date('2030-01-01T00:00:00Z'),
-  })
+  const app = createApp(
+    createServices(repository, { now: () => new Date('2030-01-01T00:00:00Z') }),
+  )
   server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: app.fetch })
   url = server.url.origin
 })

@@ -4,7 +4,7 @@ import type {
   ApplicationError,
   EventFilter,
   EventRepository,
-} from '#/domain/event-repository.ts'
+} from '#/application/ports.ts'
 import { Event } from '#/domain/event.ts'
 import { Reservation } from '#/domain/reservation.ts'
 import { EventId, ReservationId, UserId, VenueId } from '#/domain/ids.ts'

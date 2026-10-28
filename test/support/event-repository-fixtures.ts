@@ -1,6 +1,6 @@
 import { RedisClient, SQL } from 'bun'
 import { GenericContainer, Wait } from 'testcontainers'
-import type { EventRepository } from '#/domain/event-repository.ts'
+import type { EventRepository } from '#/application/ports.ts'
 import { UserId, VenueId } from '#/domain/ids.ts'
 import { InMemoryEventRepository } from '#/infrastructure/in-memory-event-repository.ts'
 import { PostgresEventRepository } from '#/infrastructure/postgres-event-repository.ts'
