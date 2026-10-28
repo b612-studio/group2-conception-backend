@@ -4,10 +4,6 @@ A Hono API for events and reservations. REST controllers call application operat
 which enforce domain rules through a repository interface. PostgreSQL is the default;
 Valkey and in-memory implementations are also available.
 
-This is step `02-application-layer`. Controllers delegate to application operations,
-but serialize domain data directly. There are no response DTO schemas or presenters.
-Request validation remains at the HTTP boundary.
-
 ## Run locally
 
 Requires Bun and Docker Compose. From this directory:
@@ -131,15 +127,14 @@ src/
   domain/               Event and reservation rules; branded UUID-v7 identifiers
   shared-kernel/        Option and Result, without framework dependencies
   infrastructure/       PostgreSQL, Valkey and in-memory repositories, entity mappings
+  presentation/         Valibot DTO schemas and domain-to-DTO presenters
   validation.ts         Valibot request schemas and branded ID conversion
 sql/init.sql            PostgreSQL schema and seeds
 ```
 
 Imports use `#/*`, configured in `package.json` and `tsconfig.json` as in `hono-deep`.
 The domain and application layers do not depend on Hono or Valibot.
-REST validates inputs at runtime using Valibot schemas. Controllers return domain
-data directly, converting reservation Option values to a date or null. JSON encoding
-serializes dates as strings. Responses have no separate schema or validation.
+REST validates inputs and outputs at runtime using Valibot schemas.
 
 ### Errors as values and absence
 
@@ -153,13 +148,14 @@ return results rather than throwing expected errors.
 only at the driver boundary. JSON responses expose a timestamp or `null` as a wire contract.
 
 Controllers translate failure Results into HTTP status codes. Unexpected infrastructure
-failures still throw. Corrupt stored data is a server failure, not invalid client input.
+failures still throw. Invalid response DTOs or corrupt stored data are server failures,
+not invalid client requests.
 
 ### Persistence
 
 `EventData` is camelCase domain state. `EventEntity` is the PostgreSQL representation.
 Reservation entities decode database absence into Option. Explicit mappers keep these
-representations separate.
+representations separate from public DTOs.
 
 `PostgresEventRepository` locks the event row before counting active reservations and
 writing a booking or capacity change. Both operations use the same lock to prevent
@@ -202,7 +198,7 @@ curl -i http://127.0.0.1:3000/events/01900000-0000-7000-8000-000000000004/reserv
 
 ### Error contracts
 
-Controllers return errors in this JSON format:
+Errors use a runtime-validated `ErrorDto`:
 
 ```json
 { "error": { "code": "CONFLICT", "message": "Not enough seats" } }

@@ -1,9 +1,15 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
+import * as v from 'valibot'
 import { createApp } from '#/app.ts'
 import { createServices } from '#/application/services.ts'
 import { InMemoryEventRepository } from '#/infrastructure/in-memory-event-repository.ts'
 import { UserId, VenueId, EventId } from '#/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'
+import {
+  errorDtoSchema,
+  eventDtoSchema,
+  reservationDtoSchema,
+} from '#/presentation/dtos.ts'
 import { given } from './support/given.ts'
 
 const alice = UserId.makeUnsafe('01900000-0000-7000-8000-000000000001')
@@ -56,7 +62,7 @@ async function anEvent(capacity = 1) {
     venueId,
   })
   expect(response.status).toBe(201)
-  return { event: response.body }
+  return { event: v.parse(eventDtoSchema, response.body) }
 }
 async function aReservation() {
   const fixture = await anEvent(2)
@@ -69,7 +75,7 @@ async function aReservation() {
   expect(response.status).toBe(201)
   return {
     ...fixture,
-    reservation: response.body,
+    reservation: v.parse(reservationDtoSchema, response.body),
   }
 }
 
@@ -90,7 +96,7 @@ test('concurrent REST reservations cannot claim the same last seat', () =>
     .then(async (results, { event }) => {
       expect(results.map((result) => result.status).sort()).toEqual([201, 409])
       const failure = results.find((result) => result.status === 409)
-      expect(failure?.body.error).toEqual({
+      expect(v.parse(errorDtoSchema, failure?.body).error).toEqual({
         code: 'CONFLICT',
         message: 'Not enough seats',
       })
@@ -163,7 +169,9 @@ test('REST cancellation preserves Option state and hides other users bookings', 
         cancelledAt: '2030-01-01T00:00:00.000Z',
       }
       expect(cancelled.body).toEqual(expected)
-      expect(listed.body).toContainEqual(expected)
+      expect(
+        v.parse(v.array(reservationDtoSchema), listed.body),
+      ).toContainEqual(expected)
       const stored = (await repository.listReservations(alice)).find(
         ({ data }) => data.id === reservation.id,
       )
@@ -203,12 +211,14 @@ test.each([
     status: 401,
     code: 'UNAUTHORIZED',
   },
-])('REST maps $name to its status and error response', (scenario) =>
+])('REST maps $name to its status and error DTO', (scenario) =>
   given(() => scenario)
     .when(({ path }) => http('GET', path))
     .then((response, expected) => {
       expect(response.status).toBe(expected.status)
-      expect(response.body.error.code).toBe(expected.code)
+      expect(v.parse(errorDtoSchema, response.body).error.code).toBe(
+        expected.code,
+      )
     }),
 )
 
@@ -221,7 +231,7 @@ test('malformed JSON returns a specific validation failure', () =>
     .when((request) => fetch(`${url}/events`, request))
     .then(async (response) => {
       expect(response.status).toBe(400)
-      expect((await response.json()).error).toEqual({
+      expect(v.parse(errorDtoSchema, await response.json()).error).toEqual({
         code: 'INVALID_INPUT',
         message: 'Request body must be valid JSON',
       })

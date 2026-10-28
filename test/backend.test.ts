@@ -115,7 +115,7 @@ test('application cancellation enforces ownership and returns the seat', () =>
       },
     ))
 
-test('HTTP creation returns event data and Location without bypassing the application', () =>
+test('HTTP creation returns the DTO and Location without bypassing the application', () =>
   given(aBackend)
     .when(({ app, venueId }) =>
       app.request('/events', {

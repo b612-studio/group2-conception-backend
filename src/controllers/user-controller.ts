@@ -1,6 +1,7 @@
 import type { Context } from 'hono'
 import type { Services } from '#/application/services.ts'
 import { httpFailure } from '#/controllers/http-result.ts'
+import { presentReservation } from '#/presentation/event-presenter.ts'
 import { requestUser } from '#/request.ts'
 import { Option } from '#/shared-kernel/option.ts'
 
@@ -15,13 +16,7 @@ export function createUserController({ read, identity }: Services) {
         return httpFailure(context, user.error)
       }
       return context.json(
-        (await read.reservationsFor(user.value)).map((reservation) => ({
-          ...reservation.data,
-          cancelledAt: Option.match(reservation.data.cancelledAt, {
-            onNone: () => null,
-            onSome: (date) => date,
-          }),
-        })),
+        (await read.reservationsFor(user.value)).map(presentReservation),
       )
     },
   }
