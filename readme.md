@@ -1,8 +1,8 @@
-# Day 2: REST, MCP and streaming AI
+# Day 2: Events REST API
 
-One application, two delivery interfaces. REST controllers and MCP tools invoke the
-same application operations. TanStack AI consumes the MCP server over HTTP and streams
-its response through a separate Hono `/chat` endpoint.
+A Hono API for events and reservations. REST controllers call application operations,
+which enforce domain rules through a repository interface. PostgreSQL is the default;
+Valkey and in-memory implementations are also available.
 
 ## Run locally
 
@@ -17,22 +17,7 @@ bun run dev
 
 The API binds to http://127.0.0.1:3000. PostgreSQL runs on localhost:55432.
 Change `POSTGRES_PORT` and `DATABASE_URL` together if needed. `ADMINER_PORT` configures
-the database web interface. If changing `PORT`, the default internal MCP URL follows it.
-`MCP_URL` overrides the trusted URL used by the AI client, never a request parameter.
-
-Add your OpenRouter key to `.env`:
-
-```dotenv
-OPENROUTER_API_KEY=your-key
-OPENROUTER_MODEL=z-ai/glm-5.3-flash
-```
-
-The live adapter uses OpenRouter's OpenAI-compatible Chat Completions endpoint,
-`https://openrouter.ai/api/v1`, with `z-ai/glm-5.3-flash` as the default model.
-`OPENROUTER_MODEL` can override it. REST, MCP, and tests need no model API key.
-Without a key, `/chat` returns 503.
-Live model calls can incur charges. Each chat request has a five-iteration tool-loop
-limit and a 60-second run timeout. Chat is single-turn, without stored conversation history.
+the database web interface. `PORT` sets the API port. No model API key is needed.
 
 ### Valkey alternative
 
@@ -46,7 +31,7 @@ VALKEY_PORT=56379
 ```
 
 PostgreSQL remains the default. Valkey uses the same demo users and venue as
-`sql/init.sql`, but starts with no events. Create an event through REST or MCP.
+`sql/init.sql`, but starts with no events. Create an event through REST.
 The two repositories store independent data; switching does not migrate it.
 Change `VALKEY_PORT` and `VALKEY_URL` together if needed.
 
@@ -65,31 +50,6 @@ The functional version defaults to 32 attempts and a 5-second deadline for the w
 mutation, including backoff. Cancellation stops future attempts and checks the signal
 before writing. A command already sent to Valkey cannot be undone, so a timeout can
 have an unknown write outcome. Do not blindly retry timed-out commands.
-
-### Repository contract tests
-
-```sh
-bun run test           # All tests, including repository contracts. Requires Docker.
-bun run test:contract  # Only the EventRepository contracts. Requires Docker.
-```
-
-`test/event-repository.test.ts` runs the same tests with `describe.each` against
-three implementations: in-memory, PostgreSQL and the original Valkey adapter.
-The functional Valkey variant is not part of this comparison.
-
-Tests call the `EventRepository` interface directly, without application services
-or handlers. They check returned values, persisted state, callback inputs,
-reference errors, filtering and ordering, ownership and concurrent mutation
-serialization. Callback failures must leave storage unchanged. Reserved seat
-counts must include only active reservations for the requested event.
-
-`test/support/event-repository-fixtures.ts` supplies the implementations and
-resource lifecycle only. Testcontainers starts disposable PostgreSQL and Valkey
-containers on random host ports. Each test starts with empty events and
-reservations. Two independent clients exercise concurrent writes. The fixtures
-close connections and stop containers after the suite. Compose, application data
-and `.env` connection URLs are not used. Missing Docker fails the tests rather
-than silently skipping adapters.
 
 ### Database web interface
 
@@ -116,7 +76,7 @@ To execute it manually against the current schema:
 docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U events -d events < sql/init.sql
 ```
 
-The new domain requires lowercase UUID v7 identifiers. Previous v4 demo data is not
+The domain requires lowercase UUID v7 identifiers. Previous v4 demo data is not
 compatible. Rerunning the seed file does not migrate old rows. For disposable lesson
 data, explicitly reset the volume, which deletes all local records:
 
@@ -138,9 +98,9 @@ A collision with an already-existing target ID causes a rollback rather than dat
 Rerunning the migration leaves UUID-v7 records unchanged. Run it before rerunning the
 seed file on an old database. No database reset or migration is performed automatically.
 
-If MCP `list_events` returns `INTERNAL_ERROR` and REST `/events` also returns 500,
-check the server logs: old UUID-v4 rows cannot be decoded by the UUID-v7 domain mapper.
-The migration resolves this; changing the client request or adding identity does not.
+If REST `/events` returns 500, check the server logs. Old UUID-v4 rows cannot be decoded
+by the UUID-v7 domain mapper. The migration resolves this; changing the client request
+or adding identity does not.
 
 | Record       | UUID v7                                |
 | ------------ | -------------------------------------- |
@@ -152,11 +112,9 @@ The migration resolves this; changing the client request or adding identity does
 ## Architecture
 
 ```text
-REST /events, /reservations ──> REST controller ──┐
-                                                ├─> Application operations ─> Repository
-MCP /mcp ────────────────────> Tool handlers ─────┘
-          ↑
-TanStack AI /chat ────────────> MCP HTTP client
+REST routes -> Controllers -> Application operations -> Repository
+                                       |
+                                  Domain rules
 ```
 
 ```text
@@ -165,22 +123,18 @@ src/
   app.ts                Hono delivery setup and HTTP error mapping
   routes/               REST routes and request validation
   controllers/          REST translation and application invocation
-  mcp/                  MCP tools, schemas, results and Streamable HTTP transport
-  chat/                 TanStack AI model loop and AG-UI SSE responses
   application/          Focused handlers, reads, identity and repository interface
   domain/               Event and reservation rules; branded UUID-v7 identifiers
   shared-kernel/        Option and Result, without framework dependencies
-  infrastructure/       PostgreSQL and in-memory repository implementations, entity mappings
+  infrastructure/       PostgreSQL, Valkey and in-memory repositories, entity mappings
   presentation/         Valibot DTO schemas and domain-to-DTO presenters
   validation.ts         Valibot request schemas and branded ID conversion
 sql/init.sql            PostgreSQL schema and seeds
 ```
 
 Imports use `#/*`, configured in `package.json` and `tsconfig.json` as in `hono-deep`.
-The domain and application layers do not depend on Hono, MCP, TanStack AI or Valibot.
-REST and MCP both validate inputs and outputs at runtime. Discoverable MCP JSON Schemas
-are generated from Valibot input schemas before their Date and branded-ID transforms.
-Custom checks and text trimming still run in Valibot even when JSON Schema cannot express them.
+The domain and application layers do not depend on Hono or Valibot.
+REST validates inputs and outputs at runtime using Valibot schemas.
 
 ### Errors as values and absence
 
@@ -193,10 +147,9 @@ return results rather than throwing expected errors.
 `Option<Date>`. SQL row decoding converts `NULL` to `None`; SQL writes convert it back
 only at the driver boundary. JSON responses expose a timestamp or `null` as a wire contract.
 
-Delivery adapters inspect Results directly and translate failures into REST status
-codes or MCP tool errors without throwing expected failures. Unexpected infrastructure
-failures still throw.
-Invalid response DTOs or corrupt stored data are server failures, not invalid client requests.
+Controllers translate failure Results into HTTP status codes. Unexpected infrastructure
+failures still throw. Invalid response DTOs or corrupt stored data are server failures,
+not invalid client requests.
 
 ### Persistence
 
@@ -213,27 +166,22 @@ of deleting it.
 `InMemoryEventRepository` implements the same port for fast backend tests. Supply its
 known user and venue IDs as sets, then pass it to `createServices`. It has no artificial
 await between checking capacity and writing, so each mutation runs in one JS turn.
-It is a test fake, not evidence that PostgreSQL transactions work. The default server
-still uses PostgreSQL.
+It is a test fake, not evidence that PostgreSQL transactions work.
 
-## REST and MCP side by side
+## REST endpoints
 
-Every MCP tool is invoked through `POST /mcp` with JSON-RPC method `tools/call`.
+| Endpoint                                          | Input                                                  |
+| ------------------------------------------------- | ------------------------------------------------------ |
+| `GET /events?category=gaming&after=...`           | Optional `category`, `after` query parameters          |
+| `POST /events`                                    | `title`, `category`, `startsAt`, `capacity`, `venueId` |
+| `GET /events/{eventId}`                           | Event ID in the path                                   |
+| `PATCH /events/{eventId}`                         | Non-empty partial event body                           |
+| `POST /events/{eventId}/reservations`             | `quantity`                                             |
+| `GET /me/reservations`                            | No body                                                |
+| `POST /reservations/{reservationId}/cancellation` | No body                                                |
 
-| REST endpoint                                     | MCP tool               | Arguments                                              |
-| ------------------------------------------------- | ---------------------- | ------------------------------------------------------ |
-| `GET /events?category=gaming&after=...`           | `list_events`          | Optional `category`, `after`                           |
-| `POST /events`                                    | `create_event`         | `title`, `category`, `startsAt`, `capacity`, `venueId` |
-| `GET /events/{eventId}`                           | `get_event`            | `eventId`                                              |
-| `PATCH /events/{eventId}`                         | `update_event`         | `eventId`, non-empty `patch`                           |
-| `POST /events/{eventId}/reservations`             | `reserve_event`        | `eventId`, `quantity`                                  |
-| `GET /me/reservations`                            | `list_my_reservations` | Empty object                                           |
-| `POST /reservations/{reservationId}/cancellation` | `cancel_reservation`   | `reservationId`                                        |
-
-REST creation and reservation return 201. Other successful operations return 200.
-Event creation supplies a `Location` header. Lists return arrays. MCP list results wrap
-arrays in `{ events: [...] }` or `{ reservations: [...] }`, because structured tool
-outputs are objects. Other successful tools return the same DTO as REST.
+Creation and reservation return 201. Other successful operations return 200.
+Event creation supplies a `Location` header. Lists return arrays.
 
 Requests reject unknown fields. Timestamps require a timezone. `after` is an exclusive
 event-start filter, not a pagination cursor. Lists sort by date and ID. There is no pagination.
@@ -241,113 +189,46 @@ Events must start in the future, capacity and quantity must be positive 32-bit i
 and capacity cannot fall below active reservations. Multiple reservations per user are allowed.
 Cancellation is allowed after event start, belongs to its user, and cannot be repeated.
 
-### Pair of equivalent requests
-
 ```sh
 curl -i http://127.0.0.1:3000/events/01900000-0000-7000-8000-000000000004/reservations \
   -H 'Content-Type: application/json' \
   -H 'X-User-Id: 01900000-0000-7000-8000-000000000001' \
   -d '{"quantity":2}'
-
-curl -N http://127.0.0.1:3000/mcp \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -H 'MCP-Protocol-Version: 2025-11-25' \
-  -H 'X-User-Id: 01900000-0000-7000-8000-000000000001' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"reserve_event","arguments":{"eventId":"01900000-0000-7000-8000-000000000004","quantity":2}}}'
 ```
-
-Each request performs its own reservation. Running both reserves four seats, not two.
-The normal MCP client sequence starts with `initialize` and `notifications/initialized`;
-the collection below includes both. The server is stateless, so it needs no session-ID header.
 
 ### Error contracts
 
-REST errors use a runtime-validated `ErrorDto`:
+Errors use a runtime-validated `ErrorDto`:
 
 ```json
 { "error": { "code": "CONFLICT", "message": "Not enough seats" } }
 ```
 
-REST uses 400 for invalid input, 401 for missing or unknown demo identity, 404 for
+The API uses 400 for invalid input, 401 for missing or unknown demo identity, 404 for
 missing resources, 409 for business conflicts, and 500 for unexpected failures.
-
-A valid MCP call with a business failure returns a result containing `isError: true`
-and an error DTO encoded as text, normally inside HTTP 200. The SDK's `McpServer`
-also reports invalid tool arguments and unknown tool names as `isError: true`, with
-SDK-provided text rather than the application error DTO. Malformed JSON-RPC envelopes
-still produce protocol errors; HTTP transport failures remain transport failures.
-Do not interpret HTTP 200 alone as a successful tool action.
-
-Tools use `McpServer.registerTool`. Valibot is the schema source of truth; its generated
-JSON Schema is adapted to Zod only because the installed MCP SDK requires Zod for
-registration. UUID validation uses a single lowercase UUID-v7 pattern, avoiding the
-`allOf` generated by overlapping UUID checks and preserving strict-mode compatibility.
-MCP's optional read filters accept `null` as omitted; required IDs and write fields do not.
 
 ### Demo identity and safety
 
-Reservation operations and `/chat` use `X-User-Id`. MCP tool arguments cannot select a
-user: the identity comes from the request header and TanStack forwards it to MCP.
-This header is not authentication. Anyone can impersonate a seeded user. Creating and
-editing events remain public for the lesson. Add authentication, organizer permissions,
-rate limits and explicit write approval before deploying an AI agent outside this demo.
-Tool annotations and system prompts are not authorization or approval controls.
+Reservation operations use `X-User-Id`. This header is not authentication. Anyone can
+impersonate a seeded user. Creating and editing events remain public for the lesson.
+Add authentication, organizer permissions and rate limits before deploying outside this demo.
 
-The server binds to loopback. MCP rejects browser origins except the local port-3000
-origins. Yaak and CLI requests normally omit Origin. No cross-origin browser UI is configured.
+The server binds to loopback. No cross-origin browser UI is configured.
 Writes are not idempotent: do not automatically retry a timed-out reservation call.
 
-## Showcase with Yaak
+## Try requests with Yaak
 
-Import `demo/yaak.postman_collection.json` using Yaak's Postman importer. It is a
+Generate the collection with `bun run demo:export`, then import
+`demo/yaak.postman_collection.json` using Yaak's Postman importer. It is a
 Postman v2.1 interchange file, not a native Yaak workspace. Requests use concrete local
-URLs and Alice's `X-User-Id` header on every request, including discovery and public
-reads, so you can inspect each request without environment setup. There is no login
-session: the header is the explicit demo identity for that request.
-The file is generated by `bun run demo:export`.
+URLs and Alice's `X-User-Id` header on every request. There is no login session.
 
-1. Open folder `0. MCP handshake and discovery`. Send initialize, initialized, then tools/list.
-2. For each workflow, compare the REST request with its MCP request in the same folder.
-3. Reserve seats through one interface and read them through the other.
-4. Compare REST 409 with MCP `isError: true` for overbooking.
-5. Compare REST 400 with MCP's invalid-input `isError: true` result.
-6. Copy a reservation ID into both cancellation requests. Replace the literal
-   `{{reservationId}}` placeholder if your importer does not migrate collection variables.
-7. With a provider key configured, send the `/chat` request and inspect its SSE events.
+Reserve seats, inspect `/me/reservations`, then copy the reservation ID into the
+cancellation request. Replace the literal `{{reservationId}}` placeholder if your
+importer does not migrate collection variables. The collection also includes
+requests demonstrating 400 validation errors and 409 overbooking conflicts.
 
-MCP Streamable HTTP and chat SSE are different streams. MCP emits JSON-RPC messages;
-chat emits AG-UI events such as `RUN_STARTED`, `TOOL_CALL_START`, `TOOL_CALL_RESULT`,
-`TEXT_MESSAGE_CONTENT` and `RUN_FINISHED`. Once streaming headers are sent, failures
-appear as `RUN_ERROR` events rather than a changed HTTP status. The normal client must
-handle both pre-stream HTTP errors and errors within the stream.
-
-Yaak versions differ in their SSE display. The SDK tests and CLI consumers below are
-the protocol-level checks; importing a collection does not replace those checks.
-
-## Consume the streams
-
-The MCP CLI uses the official SDK, which handles initialization and SSE parsing:
-
-```sh
-bun run demo:mcp
-bun run demo:mcp list_events '{"category":"gaming"}'
-bun run demo:mcp list_my_reservations '{}'
-```
-
-The chat CLI uses an SSE parser, not a hand-written split on network chunks:
-
-```sh
-bun run demo:chat 'List upcoming gaming events'
-bun run demo:chat 'Show my reservations using your tools'
-```
-
-It prints text deltas and tool events, checks stream completion, and reports HTTP or
-in-stream failures. Set `API_URL` and `DEMO_USER_ID` to override the local defaults.
-Ctrl-C aborts the request. The server closes each request's MCP client after completion,
-failure or cancellation. It never shares a user's MCP connection with another request.
-
-## Checks and backend tests
+## Checks and tests
 
 ```sh
 bun run format
@@ -355,37 +236,38 @@ bun run lint:fix
 bun run check
 bun run test
 bun run test:transports
+bun run test:contract
 ```
 
 Oxfmt targets 80 columns, with exceptions for unbreakable strings. Oxlint requires
 braces around conditionals and loops. `check` checks formatting, lint rules and types.
 
-All tests use `InMemoryEventRepository`. They need neither Docker, a database nor
-an API key, and never touch the demo database. `test` runs the whole suite;
-`test:transports` selects REST/MCP/chat transport tests. Coverage includes:
-
-- Domain Results, UUID-v7 parsing, immutable updates and Option cancellation state.
-- Real MCP SDK initialization, discovery, schema validation and seven tool workflows.
-- Shared state between REST and MCP over an ephemeral loopback HTTP server.
-- Concurrent last-seat booking, capacity rejection, ownership and repeated cancellation.
-- REST validation, status mapping and retained cancelled timestamps in memory.
-- TanStack AI invoking MCP tools with request identity; a scripted adapter replaces
-  only the external LLM.
-- Browser stream parsing, intermediate tool-call finish events, nullable read filters,
-  final text delivery, errors, cancellation and MCP cleanup after an early abort.
+`test` runs the whole suite and requires Docker for repository contracts.
+`test:transports` runs REST tests against an ephemeral loopback HTTP server with an
+in-memory repository. Domain, backend and retry tests also need no external database.
+Tests never touch the demo database.
 
 Tests execute Given/When/Then functions: `given(setup).when(action).then(assertion)`
-passes typed fixtures and outcomes through the stages. They assert resolved error
-Results and exact transport behavior rather than accepting arbitrary thrown errors.
+passes typed fixtures and outcomes through the stages. Coverage includes domain Results,
+UUID-v7 parsing, immutable updates, Option cancellation state, REST validation and status
+mapping, concurrent last-seat booking, capacity rejection, ownership and repeated cancellation.
 
-These tests do not verify PostgreSQL transactions, row locks or migrations. The
-production repository and SQL migration remain available for the running demo.
-Real OpenRouter/model behavior also remains a manual check: a deterministic adapter
-does not prove that a live model will choose the right tool.
+### Repository contract tests
 
-### References
+`test/event-repository.test.ts` runs the same tests with `describe.each` against
+three implementations: in-memory, PostgreSQL and the original Valkey adapter.
+The functional Valkey variant is not part of this comparison.
 
-- Hono MCP transport: https://github.com/honojs/middleware/tree/main/packages/mcp
-- MCP specification: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
-- TanStack AI: https://tanstack.com/ai/latest/docs/overview
-- Installed TanStack AI MCP API: `node_modules/@tanstack/ai-mcp/README.md`
+Tests call the `EventRepository` interface directly, without application services
+or handlers. They check returned values, persisted state, callback inputs,
+reference errors, filtering and ordering, ownership and concurrent mutation
+serialization. Callback failures must leave storage unchanged. Reserved seat
+counts must include only active reservations for the requested event.
+
+`test/support/event-repository-fixtures.ts` supplies the implementations and
+resource lifecycle only. Testcontainers starts disposable PostgreSQL and Valkey
+containers on random host ports. Each test starts with empty events and
+reservations. Two independent clients exercise concurrent writes. The fixtures
+close connections and stop containers after the suite. Compose, application data
+and `.env` connection URLs are not used. Missing Docker fails the tests rather
+than silently skipping adapters. SQL migrations are not covered by these tests.

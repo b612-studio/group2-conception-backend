@@ -25,11 +25,12 @@ export async function requestJson<Schema extends v.GenericSchema>(
   request: Request,
   schema: Schema,
 ): Promise<Result<v.InferOutput<Schema>, InvalidInput>> {
-  let input: unknown
-  try {
-    input = await request.json()
-  } catch {
-    return Result.fail(new InvalidInput('Request body must be valid JSON'))
+  const input = await Result.tryPromise(
+    (): Promise<unknown> => request.json(),
+    () => new InvalidInput('Request body must be valid JSON'),
+  )
+  if (input._tag === 'Failure') {
+    return input
   }
-  return parse(schema, input)
+  return parse(schema, input.value)
 }
