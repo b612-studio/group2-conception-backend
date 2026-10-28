@@ -17,7 +17,7 @@ export function presentEvent(event: Event): EventDto {
     title: event.data.title,
     category: event.data.category,
     startsAt: event.data.startsAt.toISOString(),
-    capacity: event.data.capacity,
+    capacity: event.data.capacity.value,
     venueId: event.data.venueId,
   })
 }

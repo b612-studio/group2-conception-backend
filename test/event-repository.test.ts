@@ -7,7 +7,7 @@ import {
   test,
 } from 'bun:test'
 import type { EventRepository } from '#/application/ports.ts'
-import { Event, type EventData } from '#/domain/event.ts'
+import { Event, type EventCreationData } from '#/domain/event.ts'
 import { Reservation, type ReservationData } from '#/domain/reservation.ts'
 import { EventId, ReservationId, UserId, VenueId } from '#/domain/ids.ts'
 import { Conflict, InvalidInput, NotFound } from '#/domain/errors.ts'
@@ -24,7 +24,7 @@ import {
 const createdAt = new Date('2030-01-01T00:00:00Z')
 const cancelledAt = new Date('2030-01-02T00:00:00Z')
 
-function anEvent(overrides: Partial<EventData> = {}) {
+function anEvent(overrides: Partial<EventCreationData> = {}) {
   return Result.getOrThrow(
     Event.create({
       id: EventId.make(),
@@ -61,7 +61,7 @@ function reserveSeats(
   quantity = 1,
 ) {
   return repository.reserve(eventId, (event, seats) =>
-    seats + quantity > event.data.capacity
+    !event.data.capacity.accommodates(seats + quantity)
       ? Result.fail(new Conflict('Not enough seats'))
       : Result.succeed(aReservation(eventId, { quantity })),
   )
@@ -86,7 +86,7 @@ describe.each(repositoryFactories)(
       await fixture?.close()
     })
 
-    async function storeEvent(overrides: Partial<EventData> = {}) {
+    async function storeEvent(overrides: Partial<EventCreationData> = {}) {
       const event = anEvent(overrides)
       expect(await repository.createEvent(event)).toEqual(Result.succeed(event))
       return event
@@ -172,7 +172,13 @@ describe.each(repositoryFactories)(
     test('duplicate event IDs reject the promise without overwriting the original', async () => {
       const event = await storeEvent()
       expect(
-        repository.createEvent(anEvent({ ...event.data, title: 'Duplicate' })),
+        repository.createEvent(
+          anEvent({
+            ...event.data,
+            capacity: event.data.capacity.value,
+            title: 'Duplicate',
+          }),
+        ),
       ).rejects.toThrow()
       expect(await peer.findEvent(event.data.id)).toEqual(Option.some(event))
     })
@@ -208,7 +214,13 @@ describe.each(repositoryFactories)(
       expect(await peer.findEvent(event.data.id)).toEqual(Option.some(event))
       expect(
         await repository.updateEvent(event.data.id, () =>
-          Result.succeed(anEvent({ ...event.data, venueId: VenueId.make() })),
+          Result.succeed(
+            anEvent({
+              ...event.data,
+              capacity: event.data.capacity.value,
+              venueId: VenueId.make(),
+            }),
+          ),
         ),
       ).toEqual(Result.fail(expect.any(InvalidInput)))
       expect(await peer.findEvent(event.data.id)).toEqual(Option.some(event))
@@ -377,7 +389,7 @@ describe.each(repositoryFactories)(
       const smaller = anEvent({ ...event.data, capacity: 1 })
       const results = await Promise.all([
         repository.updateEvent(event.data.id, (_, seats) =>
-          seats > smaller.data.capacity
+          !smaller.data.capacity.accommodates(seats)
             ? Result.fail(new Conflict('Capacity below reserved seats'))
             : Result.succeed(smaller),
         ),

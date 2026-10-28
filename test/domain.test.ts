@@ -79,8 +79,8 @@ test('capacity cannot fall below existing reservations and updates are immutable
           ),
         ),
       )
-      expect(Result.getOrThrow(exact).data.capacity).toBe(5)
-      expect(original.data.capacity).toBe(10)
+      expect(Result.getOrThrow(exact).data.capacity.value).toBe(5)
+      expect(original.data.capacity.value).toBe(10)
     }))
 
 test('cancellation changes None to Some without mutating the active value', () =>

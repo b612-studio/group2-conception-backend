@@ -31,7 +31,7 @@ export function eventToEntity(event: Event): EventEntity {
     title: event.data.title,
     category: event.data.category,
     starts_at: event.data.startsAt,
-    capacity: event.data.capacity,
+    capacity: event.data.capacity.value,
     venue_id: event.data.venueId,
   }
 }
