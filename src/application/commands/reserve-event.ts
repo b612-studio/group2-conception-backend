@@ -1,3 +1,5 @@
+import type { CommandHandler } from '#/shared-kernel/command-handler.ts'
+import type { ApplicationError } from '#/application/ports.ts'
 import { Reservation } from '#/domain/reservation.ts'
 import type { EventId, ReservationId, UserId } from '#/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'
@@ -8,14 +10,23 @@ import type {
   IdGenerator,
 } from '#/application/ports.ts'
 
-export class ReserveEventHandler {
+export interface ReserveEventCommand {
+  eventId: EventId
+  userId: UserId
+  quantity: number
+}
+
+export class ReserveEventUseCase implements CommandHandler<
+  ReserveEventCommand,
+  Result<Reservation, ApplicationError>
+> {
   constructor(
     private readonly repository: EventRepository,
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
   ) {}
 
-  execute(input: { eventId: EventId; userId: UserId; quantity: number }) {
+  execute(input: ReserveEventCommand) {
     return this.repository.reserve(input.eventId, (event, seats) => {
       const now = this.clock.now()
       const checked = event.checkReservation(input.quantity, seats, now)

@@ -11,14 +11,14 @@ import { given } from '../support/given.ts'
 
 test('getting an existing event returns its application value', () =>
   given(anExistingEvent)
-    .when(({ services, event }) => services.read.get(event.data.id))
+    .when(({ services, event }) => services.read.get.execute(event.data.id))
     .then((result, { event }) => {
       expect(result).toEqual(Result.succeed(event))
     }))
 
 test('a missing event is translated from Option.none to NotFound', () =>
   given(anApplication)
-    .when(({ services }) => services.read.get(EventId.make()))
+    .when(({ services }) => services.read.get.execute(EventId.make()))
     .then((result) => {
       expect(result).toEqual(Result.fail(new NotFound('Event not found')))
     }))
@@ -26,8 +26,8 @@ test('a missing event is translated from Option.none to NotFound', () =>
 test('listing an empty application returns no events or reservations', () =>
   given(anApplication)
     .when(async ({ services, alice }) => ({
-      events: await services.read.list({}),
-      reservations: await services.read.reservationsFor(alice),
+      events: await services.read.list.execute({}),
+      reservations: await services.read.reservationsFor.execute(alice),
     }))
     .then(({ events, reservations }) => {
       expect(events).toEqual([])
@@ -43,7 +43,7 @@ test('listing orders events by start time regardless of creation order', () =>
     const earlier = await fixture.createEvent()
     return { ...fixture, later, earlier }
   })
-    .when(({ services }) => services.read.list({}))
+    .when(({ services }) => services.read.list.execute({}))
     .then((events, { earlier, later }) => {
       expect(events).toEqual([earlier, later])
     }))
@@ -61,11 +61,11 @@ test('category and exclusive date filters apply together', () =>
     return { ...fixture, later }
   })
     .when(async ({ services, event }) => ({
-      filtered: await services.read.list({
+      filtered: await services.read.list.execute({
         category: 'gaming',
         after: event.data.startsAt,
       }),
-      unrelated: await services.read.list({ category: 'missing' }),
+      unrelated: await services.read.list.execute({ category: 'missing' }),
     }))
     .then(({ filtered, unrelated }, { later }) => {
       expect(filtered).toEqual([later])
@@ -76,16 +76,16 @@ test('reservations are scoped to their owner and include cancelled bookings', ()
   given(async () => {
     const fixture = await anEventWithReservation()
     const cancelled = Result.getOrThrow(
-      await fixture.services.cancel.execute(
-        fixture.reservation.data.id,
-        fixture.alice,
-      ),
+      await fixture.services.cancel.execute({
+        id: fixture.reservation.data.id,
+        userId: fixture.alice,
+      }),
     )
     return { ...fixture, cancelled }
   })
     .when(async ({ services, alice, bob }) => ({
-      owned: await services.read.reservationsFor(alice),
-      other: await services.read.reservationsFor(bob),
+      owned: await services.read.reservationsFor.execute(alice),
+      other: await services.read.reservationsFor.execute(bob),
     }))
     .then(({ owned, other }, { cancelled }) => {
       expect(owned).toEqual([cancelled])

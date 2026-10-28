@@ -5,8 +5,12 @@ framework (Hono's) request context, response status codes and headers. It should
 to query PostgreSQL or decide whether a reservation fits.
 
 [Routes](../routes/event-routes.ts) define URLs and validate incoming data.
-[event-controller.ts](event-controller.ts) receives the validated input and
-calls the appropriate service.
+The [event command controller](commands/event-controller.ts) receives validated
+write input and calls command use cases. The
+[event query controller](queries/event-controller.ts) calls event query use cases,
+and the [user query controller](queries/user-controller.ts) lists reservations.
+Controllers stay HTTP adapters; application use cases implement the shared
+`CommandHandler` or `QueryHandler` interface without depending on Hono.
 
 ## Follow a reservation request
 

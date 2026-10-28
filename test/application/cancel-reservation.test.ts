@@ -17,7 +17,7 @@ test('the owner can cancel and the clock timestamp is persisted', () =>
     return { ...fixture, now }
   })
     .when(({ services, reservation, alice }) =>
-      services.cancel.execute(reservation.data.id, alice),
+      services.cancel.execute({ id: reservation.data.id, userId: alice }),
     )
     .then(async (result, { services, reservation, alice, now }) => {
       const cancelled = Result.getOrThrow(result)
@@ -25,17 +25,21 @@ test('the owner can cancel and the clock timestamp is persisted', () =>
         ...reservation.data,
         cancelledAt: Option.some(now),
       })
-      expect(await services.read.reservationsFor(alice)).toEqual([cancelled])
+      expect(await services.read.reservationsFor.execute(alice)).toEqual([
+        cancelled,
+      ])
     }))
 
 test('another user cannot cancel a booking or release its seats', () =>
   given(anEventWithReservation)
     .when(({ services, reservation, bob }) =>
-      services.cancel.execute(reservation.data.id, bob),
+      services.cancel.execute({ id: reservation.data.id, userId: bob }),
     )
     .then(async (result, { services, event, reservation, alice, bob }) => {
       expect(result).toEqual(Result.fail(new NotFound('Reservation not found')))
-      expect(await services.read.reservationsFor(alice)).toEqual([reservation])
+      expect(await services.read.reservationsFor.execute(alice)).toEqual([
+        reservation,
+      ])
       expect(
         await services.reserve.execute({
           eventId: event.data.id,
@@ -48,7 +52,7 @@ test('another user cannot cancel a booking or release its seats', () =>
 test('cancellation releases the full quantity for another user', () =>
   given(anEventWithReservation)
     .when(({ services, reservation, alice }) =>
-      services.cancel.execute(reservation.data.id, alice),
+      services.cancel.execute({ id: reservation.data.id, userId: alice }),
     )
     .then(async (result, { services, event, bob }) => {
       Result.getOrThrow(result)
@@ -60,7 +64,7 @@ test('cancellation releases the full quantity for another user', () =>
         }),
       )
       expect(next.data.quantity).toBe(2)
-      expect(await services.read.reservationsFor(bob)).toEqual([next])
+      expect(await services.read.reservationsFor.execute(bob)).toEqual([next])
     }))
 
 test('repeated cancellation preserves the original timestamp and cannot release seats twice', () =>
@@ -68,7 +72,7 @@ test('repeated cancellation preserves the original timestamp and cannot release 
     const fixture = await anEventWithReservation()
     const { services, event, reservation, alice, bob } = fixture
     const cancelled = Result.getOrThrow(
-      await services.cancel.execute(reservation.data.id, alice),
+      await services.cancel.execute({ id: reservation.data.id, userId: alice }),
     )
     const replacement = Result.getOrThrow(
       await services.reserve.execute({
@@ -81,7 +85,7 @@ test('repeated cancellation preserves the original timestamp and cannot release 
     return { ...fixture, cancelled, replacement }
   })
     .when(({ services, reservation, alice }) =>
-      services.cancel.execute(reservation.data.id, alice),
+      services.cancel.execute({ id: reservation.data.id, userId: alice }),
     )
     .then(
       async (
@@ -91,8 +95,12 @@ test('repeated cancellation preserves the original timestamp and cannot release 
         expect(result).toEqual(
           Result.fail(new Conflict('Reservation is already cancelled')),
         )
-        expect(await services.read.reservationsFor(alice)).toEqual([cancelled])
-        expect(await services.read.reservationsFor(bob)).toEqual([replacement])
+        expect(await services.read.reservationsFor.execute(alice)).toEqual([
+          cancelled,
+        ])
+        expect(await services.read.reservationsFor.execute(bob)).toEqual([
+          replacement,
+        ])
         expect(
           await services.reserve.execute({
             eventId: event.data.id,
@@ -106,7 +114,7 @@ test('repeated cancellation preserves the original timestamp and cannot release 
 test('cancelling a missing reservation returns NotFound', () =>
   given(anApplication)
     .when(({ services, alice }) =>
-      services.cancel.execute(ReservationId.make(), alice),
+      services.cancel.execute({ id: ReservationId.make(), userId: alice }),
     )
     .then((result) => {
       expect(result).toEqual(Result.fail(new NotFound('Reservation not found')))

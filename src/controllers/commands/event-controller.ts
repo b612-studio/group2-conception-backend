@@ -1,6 +1,5 @@
 import type { Context } from 'hono'
 import type { Services } from '#/application/services.ts'
-import type { EventFilter } from '#/application/ports.ts'
 import type { EventInput } from '#/domain/event.ts'
 import type { EventId, ReservationId } from '#/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'
@@ -11,21 +10,16 @@ import {
   presentReservation,
 } from '#/presentation/event-presenter.ts'
 
-export function createEventController({
-  read,
+export function createEventCommandController({
   identity,
   create,
   update,
   reserve,
   cancel,
-}: Services) {
+}: Pick<Services, 'identity' | 'create' | 'update' | 'reserve' | 'cancel'>) {
   const currentUser = (context: Context) =>
     requestUser(identity, Option.fromNullable(context.req.header('X-User-Id')))
   return {
-    list: async (context: Context, filter: EventFilter) =>
-      context.json((await read.list(filter)).map(presentEvent)),
-    get: async (context: Context, id: EventId) =>
-      httpResult(context, await read.get(id), presentEvent),
     create: async (context: Context, input: EventInput) => {
       const result = await create.execute(input)
       if (result._tag === 'Success') {
@@ -34,7 +28,7 @@ export function createEventController({
       return httpResult(context, result, presentEvent, 201)
     },
     update: async (context: Context, id: EventId, patch: Partial<EventInput>) =>
-      httpResult(context, await update.execute(id, patch), presentEvent),
+      httpResult(context, await update.execute({ id, patch }), presentEvent),
     reserve: async (context: Context, eventId: EventId, quantity: number) => {
       const user = await currentUser(context)
       if (user._tag === 'Failure') {
@@ -54,10 +48,12 @@ export function createEventController({
       }
       return httpResult(
         context,
-        await cancel.execute(id, user.value),
+        await cancel.execute({ id, userId: user.value }),
         presentReservation,
       )
     },
   }
 }
-export type EventController = ReturnType<typeof createEventController>
+export type EventCommandController = ReturnType<
+  typeof createEventCommandController
+>
