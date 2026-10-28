@@ -1,8 +1,8 @@
 # Day 2: Events REST API
 
-A Hono API for events and reservations. REST controllers call application operations,
-which enforce domain rules through a repository interface. PostgreSQL is the default;
-Kysely, Drizzle, Valkey and in-memory implementations are also available.
+A Hono API for events and reservations. This lesson separates HTTP handling,
+application operations, domain rules and persistence. PostgreSQL is the default
+storage backend, with alternative adapters for comparing persistence approaches.
 
 ## Run locally
 
@@ -15,74 +15,181 @@ docker compose up -d --wait
 bun run dev
 ```
 
-The API binds to http://127.0.0.1:3000. PostgreSQL runs on localhost:55432.
-Change `POSTGRES_PORT` and `DATABASE_URL` together if needed. `ADMINER_PORT` configures
-the database web interface. `PORT` sets the API port. No model API key is needed.
+The API listens on http://127.0.0.1:3000. PostgreSQL is available on
+localhost:55432, and Adminer on http://localhost:8080.
 
-### Teacher variants: Kysely and Drizzle
+## Environment variables
 
-Compare the same repository contract with raw SQL, a typed query builder, and an ORM:
+Bun loads the API configuration from `.env`. Docker Compose uses the same file
+for the published service ports. `.env.example` contains the local demo settings.
+
+| Variable           | Default                                           | Purpose                                                                            |
+| ------------------ | ------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `PORT`             | `3000`                                            | HTTP port for the API, bound to `127.0.0.1`.                                       |
+| `EVENT_REPOSITORY` | `postgres`                                        | Storage adapter: `postgres`, `kysely`, `drizzle`, `valkey` or `valkey-functional`. |
+| `DATABASE_URL`     | `postgres://events:events@localhost:55432/events` | PostgreSQL connection URL for the raw SQL, Kysely and Drizzle adapters.            |
+| `POSTGRES_PORT`    | `55432`                                           | Host port Docker Compose publishes for PostgreSQL.                                 |
+| `VALKEY_URL`       | `redis://localhost:56379`                         | Connection URL for either Valkey adapter.                                          |
+| `VALKEY_PORT`      | `56379`                                           | Host port Docker Compose publishes for Valkey.                                     |
+| `ADMINER_PORT`     | `8080`                                            | Host port for the Adminer database interface.                                      |
+
+If you change `POSTGRES_PORT`, update the port in `DATABASE_URL` too. The same
+applies to `VALKEY_PORT` and `VALKEY_URL`. Restart the API after changing its
+configuration, and rerun `docker compose up -d --wait` after changing service ports.
+No model API key is needed.
+
+## REST endpoints
+
+| Endpoint                                          | Input                                                  | Concept                                                                                     |
+| ------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `GET /events`                                     | Optional `category` and `after` query parameters       | Filter and list events. `after` is an exclusive start-date filter, not a pagination cursor. |
+| `POST /events`                                    | `title`, `category`, `startsAt`, `capacity`, `venueId` | Create an event at an existing venue.                                                       |
+| `GET /events/{eventId}`                           | Event ID in the path                                   | Read one event.                                                                             |
+| `PATCH /events/{eventId}`                         | Non-empty partial event body                           | Update an event without reducing capacity below its active reservations.                    |
+| `POST /events/{eventId}/reservations`             | `quantity`                                             | Reserve seats while checking remaining capacity.                                            |
+| `GET /me/reservations`                            | `X-User-Id` header                                     | List the current demo user's reservations.                                                  |
+| `POST /reservations/{reservationId}/cancellation` | Reservation ID and `X-User-Id` header                  | Cancel a reservation owned by the current demo user.                                        |
+
+Event creation and seat reservation return `201`. Other successful operations
+return `200`. Event creation also returns a `Location` header. Lists return arrays,
+sorted by date and ID, without pagination.
+
+Requests reject unknown fields, and timestamps must include a timezone. Events
+must start in the future. Capacity and reservation quantity must be positive
+32-bit integers. A user can make multiple reservations for the same event.
+Cancellation records a timestamp instead of deleting the reservation. It is
+allowed after the event starts, but cannot be repeated.
+
+Reservation operations require `X-User-Id`, using one of the seeded user IDs below.
+This header is a demo identity mechanism, not authentication. Anyone can
+impersonate a seeded user. Event creation and editing are public for this lesson.
+Add authentication, organizer permissions and rate limits before deploying it.
+Writes are not idempotent, so do not automatically retry a timed-out reservation.
+
+## Architecture
+
+```text
+REST routes -> Controllers -> Application operations -> Repository
+                                       |
+                                  Domain rules
+```
+
+- Routes define endpoints and validate incoming requests.
+- Controllers translate HTTP requests into application calls and format responses.
+- Application operations coordinate event creation, updates, reservations and cancellation.
+- The domain defines event and reservation rules, including capacity and ownership.
+- The repository interface lets application operations use storage without depending
+  on a specific database library.
+- Infrastructure adapters implement persistence and map stored records to domain data.
+- Presenters define the public response DTOs, separate from database records.
+
+```text
+src/
+  bootstrap.ts          Composition root and local HTTP server
+  app.ts                Hono application setup
+  routes/               REST routes and request validation
+  controllers/          HTTP translation and application calls
+  application/          Handlers, reads, identity and repository interface
+  domain/               Event and reservation rules; UUID-v7 identifiers
+  shared-kernel/        Shared types without framework dependencies
+  infrastructure/       Query schemas, entity mappings and database helper
+    repository/         Persistence adapters
+  presentation/         DTO schemas and domain-to-DTO presenters
+  validation.ts         Request schemas and branded ID conversion
+sql/init.sql            PostgreSQL schema and seed data
+```
+
+The domain and application layers do not depend on Hono or Valibot. The HTTP layer
+uses Valibot to validate requests and responses. Imports use the `#/*` alias defined
+in `package.json` and `tsconfig.json`.
+
+### Persistence adapters
+
+Select an adapter through `EVENT_REPOSITORY`:
+
+| Value               | Approach                                                       |
+| ------------------- | -------------------------------------------------------------- |
+| `postgres`          | Raw SQL through Bun's SQL client. Default adapter.             |
+| `kysely`            | Typed SQL query builder using the `pg` driver.                 |
+| `drizzle`           | ORM with TypeScript table declarations, using the `pg` driver. |
+| `valkey`            | JSON snapshot storage with atomic compare-and-set writes.      |
+| `valkey-functional` | Valkey variant that composes retry and timeout functions.      |
+
+For example:
 
 ```sh
 EVENT_REPOSITORY=kysely bun run dev
 EVENT_REPOSITORY=drizzle bun run dev
 ```
 
-Both variants use `DATABASE_URL` and the same PostgreSQL tables and data as the
-raw SQL adapter. Switching between them does not copy or reset records.
+The three PostgreSQL adapters share the same tables and records. Switching between
+them does not copy or reset data. They lock the event row inside a transaction
+before checking reserved seats and writing a reservation or capacity change. This
+prevents concurrent requests from overbooking an event.
 
-Repository implementations live in `src/infrastructure/repository/`.
-Schemas, entity mappers and the database helper stay in `src/infrastructure/`:
+`sql/init.sql` owns the database schema. Kysely and Drizzle schemas describe those
+tables for queries. Editing the TypeScript descriptions does not change the database.
+There is no code generation or migration runner.
 
-| Adapter | Repository                     | Type description                                                  |
-| ------- | ------------------------------ | ----------------------------------------------------------------- |
-| Raw SQL | `postgres-event-repository.ts` | Existing entity types                                             |
-| Kysely  | `kysely-event-repository.ts`   | `kysely-schema.ts`, compile-time table types                      |
-| Drizzle | `drizzle-event-repository.ts`  | `drizzle-schema.ts`, table declarations with inferred query types |
+Valkey stores independent data in the `valkey_data` Docker volume with append-only
+persistence. It recognizes the same demo user and venue IDs, but starts without
+events. Create an event through the API before reserving seats. Switching between
+PostgreSQL and Valkey does not migrate records.
 
-Kysely is a typed SQL query builder, not an ORM. Drizzle describes columns at runtime
-and infers query types from them. Both use the `pg` driver, reuse the existing domain
-mappers, and keep SQL `NULL` at the driver boundary. They lock the event row inside a
-transaction before reading reserved seats, just like the raw SQL version.
+The Valkey adapters read a single snapshot and retry conflicting writes through
+an atomic Lua compare-and-set operation. This is a small-demo design, not a storage
+approach for large datasets. The functional variant limits a mutation to 32 attempts
+and a five-second deadline. A timeout cannot undo a command already sent to Valkey.
 
-There is no code generation, migration runner, or Drizzle Kit setup. `sql/init.sql`
-remains the source of truth for DDL, constraints, indexes and seeds. The TypeScript
-schemas describe existing tables for queries; changing them does not alter the database.
-Apply database changes through SQL and update the descriptions to match.
+An in-memory repository is also available for tests, but is not a selectable server
+backend.
 
-### Valkey alternative
+## Database structure
 
-Compose also provides `valkey/valkey:alpine` on localhost:56379, bound to loopback,
-with append-only persistence in the `valkey_data` volume. Set these in `.env`:
+`sql/init.sql` creates four PostgreSQL tables:
 
-```dotenv
-EVENT_REPOSITORY=valkey
-VALKEY_URL=redis://localhost:56379
-VALKEY_PORT=56379
+| Table          | Columns and role                                                                                                           |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `users`        | `id`, `name`, unique `email`. Users who can reserve seats.                                                                 |
+| `venues`       | `id`, `name`, `address`. Locations that host events.                                                                       |
+| `events`       | `id`, `title`, `category`, `starts_at`, `capacity`, `venue_id`. Each event belongs to a venue.                             |
+| `reservations` | `id`, `event_id`, `user_id`, `quantity`, `created_at`, nullable `cancelled_at`. Each reservation links a user to an event. |
+
+```text
+venues 1 ---- * events 1 ---- * reservations * ---- 1 users
 ```
 
-PostgreSQL remains the default. Valkey uses the same demo users and venue as
-`sql/init.sql`, but starts with no events. Create an event through REST.
-The two repositories store independent data; switching does not migrate it.
-Change `VALKEY_PORT` and `VALKEY_URL` together if needed.
+All IDs are UUIDs. The domain requires lowercase UUID v7 identifiers. Foreign keys
+connect events to venues and reservations to events and users. SQL constraints
+require non-empty event titles and categories, positive capacity and positive
+reservation quantities.
 
-The Valkey adapter stores a single validated snapshot for this small demo.
-Valibot pipelines encode and decode JSON and dates. An atomic Lua compare-and-set
-retries concurrent writes, so capacity checks cannot overbook across API processes.
-Mutation callbacks can run more than once and must not perform external side effects.
-All records are read for each operation, so this design is not intended for large datasets.
+Indexes support event date/category filters and reservation lookups by event or
+user. Only reservations without a cancellation timestamp count toward occupied seats.
 
-The second implementation, `src/infrastructure/repository/valkey-event-repository-functional.ts`,
-reuses the codec and storage operations but composes `withTimeout(retry(attempt))`.
-Select it with `EVENT_REPOSITORY=valkey-functional`. Retry uses asynchronous recursion
-with injectable backoff and sleep functions, not a loop. Both versions retry only
-compare-and-set contention, never business failures or infrastructure rejections.
-The functional version defaults to 32 attempts and a 5-second deadline for the whole
-mutation, including backoff. Cancellation stops future attempts and checks the signal
-before writing. A command already sent to Valkey cannot be undone, so a timeout can
-have an unknown write outcome. Do not blindly retry timed-out commands.
+### Default entries
 
-### Database web interface
+PostgreSQL starts with the following records from `sql/init.sql`. There are no
+seeded reservations.
+
+| Record           | UUID v7                                | Details                                                                                |
+| ---------------- | -------------------------------------- | -------------------------------------------------------------------------------------- |
+| Alice            | `01900000-0000-7000-8000-000000000001` | `alice@example.com`                                                                    |
+| Bob              | `01900000-0000-7000-8000-000000000002` | `bob@example.com`                                                                      |
+| Game room        | `01900000-0000-7000-8000-000000000003` | `12 rue du Jeu, Paris`                                                                 |
+| Board game night | `01900000-0000-7000-8000-000000000004` | Category `gaming`, starts at `2099-06-15T18:00:00Z`, capacity 20, hosted in Game room. |
+
+Compose runs the initialization SQL only when the PostgreSQL volume is empty.
+To apply it manually to the current database:
+
+```sh
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U events -d events < sql/init.sql
+```
+
+Existing rows are kept. Rerunning this file does not reset edited records or migrate
+an older schema.
+
+### Inspect the database
 
 Open http://localhost:8080 and select PostgreSQL:
 
@@ -93,233 +200,37 @@ Open http://localhost:8080 and select PostgreSQL:
 | Password | `events`   |
 | Database | `events`   |
 
-`postgres` is the Compose service name, not localhost inside Adminer.
-Use SQL command to query the database or Import to load `sql/init.sql`.
-These services bind to localhost and use demo credentials.
+Adminer connects through the Compose service name `postgres`, not `localhost`.
+These credentials and loopback-only service bindings are intended for local use.
 
-### SQL and UUID-v7 upgrade
+### Older UUID-v4 data
 
-`sql/init.sql` creates `users`, `venues`, `events`, and `reservations` and inserts demo
-records. Compose runs it automatically only when the database volume is empty.
-To execute it manually against the current schema:
-
-```sh
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U events -d events < sql/init.sql
-```
-
-The domain requires lowercase UUID v7 identifiers. Previous v4 demo data is not
-compatible. Rerunning the seed file does not migrate old rows. For disposable lesson
-data, explicitly reset the volume, which deletes all local records:
-
-```sh
-docker compose down -v
-docker compose up -d --wait
-```
-
-For existing data, back up the database and run the data-preserving migration instead:
+Older demo data with UUID-v4 identifiers is incompatible with the current domain.
+Back it up and run the data-preserving migration before rerunning the seed file:
 
 ```sh
 docker compose exec -T postgres pg_dump -U events -d events > /tmp/events-before-uuid-v7.sql
 docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U events -d events < sql/migrate-uuid-v7.sql
 ```
 
-This converts legacy identifiers and their foreign keys in one transaction, preserving
-reservations and ownership. It prints the old-to-new mapping for external references.
-A collision with an already-existing target ID causes a rollback rather than data loss.
-Rerunning the migration leaves UUID-v7 records unchanged. Run it before rerunning the
-seed file on an old database. No database reset or migration is performed automatically.
+The migration updates identifiers and foreign keys in one transaction and prints
+the old-to-new mapping. It preserves existing UUID-v7 records.
 
-If REST `/events` returns 500, check the server logs. Old UUID-v4 rows cannot be decoded
-by the UUID-v7 domain mapper. The migration resolves this; changing the client request
-or adding identity does not.
-
-| Record       | UUID v7                                |
-| ------------ | -------------------------------------- |
-| Alice        | `01900000-0000-7000-8000-000000000001` |
-| Bob          | `01900000-0000-7000-8000-000000000002` |
-| Venue        | `01900000-0000-7000-8000-000000000003` |
-| Gaming event | `01900000-0000-7000-8000-000000000004` |
-
-## Architecture
-
-```text
-REST routes -> Controllers -> Application operations -> Repository
-                                       |
-                                  Domain rules
-```
-
-```text
-src/
-  bootstrap.ts          Composition root and local HTTP server
-  app.ts                Hono delivery setup and HTTP error mapping
-  routes/               REST routes and request validation
-  controllers/          REST translation and application invocation
-  application/          Focused handlers, reads, identity and repository interface
-  domain/               Event and reservation rules; branded UUID-v7 identifiers
-  shared-kernel/        Option and Result, without framework dependencies
-  infrastructure/       Query schemas, entity mappings and database helper
-    repository/         Repository implementations
-  presentation/         Valibot DTO schemas and domain-to-DTO presenters
-  validation.ts         Valibot request schemas and branded ID conversion
-sql/init.sql            PostgreSQL schema and seeds
-```
-
-Imports use `#/*`, configured in `package.json` and `tsconfig.json` as in `hono-deep`.
-The domain and application layers do not depend on Hono or Valibot.
-REST validates inputs and outputs at runtime using Valibot schemas.
-
-### Errors as values and absence
-
-Expected business failures are `Result<Value, Error>` values with `_tag: 'Success'`
-or `_tag: 'Failure'`. Event creation, capacity checks, updates, reservation and cancellation
-return results rather than throwing expected errors.
-
-`Option<Value>` represents absence using `None` and `Some`. Repository lookups return
-`Option<Event>`. Both domain `cancelledAt` and persistence-entity `cancelled_at` use
-`Option<Date>`. SQL row decoding converts `NULL` to `None`; SQL writes convert it back
-only at the driver boundary. JSON responses expose a timestamp or `null` as a wire contract.
-
-Controllers translate failure Results into HTTP status codes. Unexpected infrastructure
-failures still throw. Invalid response DTOs or corrupt stored data are server failures,
-not invalid client requests.
-
-### Persistence
-
-`EventData` is camelCase domain state. `EventEntity` is the PostgreSQL representation.
-Reservation entities decode database absence into Option. Explicit mappers keep these
-representations separate from public DTOs.
-
-`PostgresEventRepository` locks the event row before counting active reservations and
-writing a booking or capacity change. Both operations use the same lock to prevent
-concurrent overbooking. Returning Failure from the mutation callback performs no write.
-Cancelling locks the reservation, checks ownership, and records the cancellation instead
-of deleting it.
-
-`InMemoryEventRepository` implements the same port for fast backend tests. Supply its
-known user and venue IDs as sets, then pass it to `createServices`. It has no artificial
-await between checking capacity and writing, so each mutation runs in one JS turn.
-It is a test fake, not evidence that PostgreSQL transactions work.
-
-## REST endpoints
-
-| Endpoint                                          | Input                                                  |
-| ------------------------------------------------- | ------------------------------------------------------ |
-| `GET /events?category=gaming&after=...`           | Optional `category`, `after` query parameters          |
-| `POST /events`                                    | `title`, `category`, `startsAt`, `capacity`, `venueId` |
-| `GET /events/{eventId}`                           | Event ID in the path                                   |
-| `PATCH /events/{eventId}`                         | Non-empty partial event body                           |
-| `POST /events/{eventId}/reservations`             | `quantity`                                             |
-| `GET /me/reservations`                            | No body                                                |
-| `POST /reservations/{reservationId}/cancellation` | No body                                                |
-
-Creation and reservation return 201. Other successful operations return 200.
-Event creation supplies a `Location` header. Lists return arrays.
-
-Requests reject unknown fields. Timestamps require a timezone. `after` is an exclusive
-event-start filter, not a pagination cursor. Lists sort by date and ID. There is no pagination.
-Events must start in the future, capacity and quantity must be positive 32-bit integers,
-and capacity cannot fall below active reservations. Multiple reservations per user are allowed.
-Cancellation is allowed after event start, belongs to its user, and cannot be repeated.
+For disposable lesson data, you can reset the volumes instead. **This deletes all
+local PostgreSQL and Valkey records.**
 
 ```sh
-curl -i http://127.0.0.1:3000/events/01900000-0000-7000-8000-000000000004/reservations \
-  -H 'Content-Type: application/json' \
-  -H 'X-User-Id: 01900000-0000-7000-8000-000000000001' \
-  -d '{"quantity":2}'
+docker compose down -v
+docker compose up -d --wait
 ```
 
-### Error contracts
-
-Errors use a runtime-validated `ErrorDto`:
-
-```json
-{ "error": { "code": "CONFLICT", "message": "Not enough seats" } }
-```
-
-The API uses 400 for invalid input, 401 for missing or unknown demo identity, 404 for
-missing resources, 409 for business conflicts, and 500 for unexpected failures.
-
-### Demo identity and safety
-
-Reservation operations use `X-User-Id`. This header is not authentication. Anyone can
-impersonate a seeded user. Creating and editing events remain public for the lesson.
-Add authentication, organizer permissions and rate limits before deploying outside this demo.
-
-The server binds to loopback. No cross-origin browser UI is configured.
-Writes are not idempotent: do not automatically retry a timed-out reservation call.
-
-## Try requests with Yaak
-
-Generate the collection with `bun run demo:export`, then import
-`demo/yaak.postman_collection.json` using Yaak's Postman importer. It is a
-Postman v2.1 interchange file, not a native Yaak workspace. Requests use concrete local
-URLs and Alice's `X-User-Id` header on every request. There is no login session.
-
-Reserve seats, inspect `/me/reservations`, then copy the reservation ID into the
-cancellation request. Replace the literal `{{reservationId}}` placeholder if your
-importer does not migrate collection variables. The collection also includes
-requests demonstrating 400 validation errors and 409 overbooking conflicts.
-
-## Checks and tests
+## Checks
 
 ```sh
-bun run format
-bun run lint:fix
 bun run check
 bun run test
-bun run test:application
-bun run test:transports
-bun run test:contract
 ```
 
-Oxfmt targets 80 columns, with exceptions for unbreakable strings. Oxlint requires
-braces around conditionals and loops. `check` checks formatting, lint rules and types.
-
-`test` runs the whole suite and requires Docker for repository contracts.
-`test:application` runs the use-case suites without Docker or an HTTP server.
-`test:transports` runs REST tests against an ephemeral loopback HTTP server with an
-in-memory repository. Domain, application and retry tests need no external database.
-Tests never touch the demo database.
-
-Application and transport scenarios use Given/When/Then functions:
-`given(setup).when(action).then(assertion)` passes typed fixtures and outcomes
-through the stages. Setup creates the preconditions, the action invokes the use
-case, and assertions check both its result and observable persisted state.
-Follow-up operations can verify that a rejected write did not consume capacity.
-
-### Use-case tests
-
-`test/application/` replaces the mixed `backend.test.ts` suite with one file per
-application handler: create, update, reserve, cancel, read and demo identity.
-Tests call handlers through `createServices`, without controllers, routes or DTOs.
-`test/support/application-fixture.ts` provides a fresh in-memory repository,
-known users and venue, a controllable clock, and small event/reservation fixtures
-for each scenario. No mutable state is shared between tests.
-
-These suites cover successful writes and reads, missing records, invalid input
-and references, clock boundaries, capacity, ownership, repeated cancellation,
-filtering and reservation visibility. Failed mutations must leave stored values
-unchanged. Concurrent last-seat booking checks application behavior against the
-in-memory fake, not database locking. Repository contracts prove the adapter
-behavior separately. HTTP creation, Location headers, DTOs, validation and status
-mapping remain in `test/transports.test.ts`.
-
-### Repository contract tests
-
-`test/event-repository.test.ts` runs the same tests with `describe.each` against
-five implementations: in-memory, raw PostgreSQL, Kysely, Drizzle and the original Valkey adapter.
-The functional Valkey variant is not part of this comparison.
-
-Tests call the `EventRepository` interface directly, without application services
-or handlers. They check returned values, persisted state, callback inputs,
-reference errors, filtering and ordering, ownership and concurrent mutation
-serialization. Callback failures must leave storage unchanged. Reserved seat
-counts must include only active reservations for the requested event.
-
-`test/support/event-repository-fixtures.ts` supplies the implementations and
-resource lifecycle only. Testcontainers starts disposable PostgreSQL and Valkey
-containers on random host ports. Each test starts with empty events and
-reservations. Two independent clients exercise concurrent writes. The fixtures
-close connections and stop containers after the suite. Compose, application data
-and `.env` connection URLs are not used. Missing Docker fails the tests rather
-than silently skipping adapters. SQL migrations are not covered by these tests.
+`check` verifies formatting, lint rules and TypeScript types. The test suite covers
+application operations, REST endpoints and repository contracts. Repository tests
+require Docker and use disposable containers, not the demo database.
