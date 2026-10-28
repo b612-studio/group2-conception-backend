@@ -16,28 +16,23 @@ if (
     'EVENT_REPOSITORY must be postgres, valkey or valkey-functional',
   )
 }
-function createPersistence(
-  backend: 'postgres' | 'valkey' | 'valkey-functional',
-) {
-  if (backend === 'postgres') {
-    const sql = new SQL(
-      process.env.DATABASE_URL ??
-        'postgres://events:events@localhost:55432/events',
-    )
-    return {
-      repository: new PostgresEventRepository(sql),
-      close: () => sql.close(),
-    }
-  }
-  const valkey = new RedisClient(
-    process.env.VALKEY_URL ?? 'redis://localhost:56379',
-  )
-  const Repository =
-    backend === 'valkey-functional'
-      ? FunctionalValkeyEventRepository
-      : ValkeyEventRepository
-  return {
-    repository: new Repository(valkey, {
+const sql =
+  backend === 'postgres'
+    ? new SQL(
+        process.env.DATABASE_URL ??
+          'postgres://events:events@localhost:55432/events',
+      )
+    : undefined
+const valkey =
+  backend !== 'postgres'
+    ? new RedisClient(process.env.VALKEY_URL ?? 'redis://localhost:56379')
+    : undefined
+const ValkeyRepository =
+  backend === 'valkey-functional'
+    ? FunctionalValkeyEventRepository
+    : ValkeyEventRepository
+const repository = valkey
+  ? new ValkeyRepository(valkey, {
       users: new Set([
         UserId.makeUnsafe('01900000-0000-7000-8000-000000000001'),
         UserId.makeUnsafe('01900000-0000-7000-8000-000000000002'),
@@ -45,15 +40,13 @@ function createPersistence(
       venues: new Set([
         VenueId.makeUnsafe('01900000-0000-7000-8000-000000000003'),
       ]),
-    }),
-    close: () => valkey.close(),
-  }
-}
-
-const persistence = createPersistence(backend)
-const services = createServices(persistence.repository)
+    })
+  : new PostgresEventRepository(sql!)
+const services = createServices(repository)
 const port = Number(process.env.PORT ?? 3000)
-const app = createApp(services)
+const app = createApp(services, {
+  mcpUrl: () => process.env.MCP_URL ?? `http://127.0.0.1:${port}/mcp`,
+})
 const server = Bun.serve({
   hostname: '127.0.0.1',
   port,
@@ -63,7 +56,8 @@ console.log(`Events API listening on ${server.url}`)
 
 async function shutdown() {
   await server.stop()
-  await persistence.close()
+  await sql?.close()
+  valkey?.close()
   process.exit(0)
 }
 process.once('SIGINT', shutdown)

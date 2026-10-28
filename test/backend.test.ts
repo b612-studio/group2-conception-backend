@@ -18,7 +18,7 @@ function aBackend() {
   const services = createServices(repository, {
     now: () => new Date('2030-01-01T00:00:00Z'),
   })
-  const app = createApp(services)
+  const app = createApp(services, { mcpUrl: () => 'http://127.0.0.1:3000/mcp' })
   return { alice, bob, venueId, repository, services, app }
 }
 const eventInput = {
