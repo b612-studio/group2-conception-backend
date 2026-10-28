@@ -103,6 +103,22 @@ The domain and application layers do not depend on Hono or Valibot. The HTTP lay
 uses Valibot to validate requests and responses. Imports use the `#/*` alias defined
 in `package.json` and `tsconfig.json`.
 
+### Design guides beside the code
+
+These guides explain the patterns through this lesson's implementation:
+
+- [Domain](src/domain/domain.md): business rules and application coordination.
+- [Domain entities](src/domain/entities.md): identity across updates and cancellation.
+- [Value objects](src/domain/value-objects.md): capacity validation and value equality.
+- [Branded types](src/domain/branded-types.md): distinct identifier types and runtime validation.
+- [Repository pattern](src/infrastructure/repository/repository-pattern.md): storage contracts and protected mutations.
+- [Database entities](src/infrastructure/entities.md): rows versus domain entities and their mappings.
+- [Errors as values](src/shared-kernel/errors-as-values.md): expected failures, absence and exceptions.
+- [Shared kernel](src/shared-kernel/shared-kernel.md): common types and dependency boundaries.
+- [DTOs and presenters](src/presentation/dto-and-presenter.md): public JSON versus internal representations.
+- [Controllers](src/controllers/controller.md): HTTP translation without business or persistence rules.
+- [Services and dependency injection](src/application/dependency-injection.md): constructor dependencies and startup wiring.
+
 ### Persistence adapters
 
 Select an adapter through `EVENT_REPOSITORY`:

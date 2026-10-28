@@ -66,7 +66,7 @@ test('capacity may equal the number of reserved seats', () =>
       services.update.execute(event.data.id, { capacity: 2 }),
     )
     .then(async (result, { services, event }) => {
-      expect(Result.getOrThrow(result).data.capacity).toBe(2)
+      expect(Result.getOrThrow(result).data.capacity.value).toBe(2)
       expect(await services.read.get(event.data.id)).toEqual(result)
     }))
 

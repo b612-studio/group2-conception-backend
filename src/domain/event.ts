@@ -1,3 +1,4 @@
+import { Capacity } from '#/domain/capacity.ts'
 import { Conflict, InvalidInput } from '#/domain/errors.ts'
 import type { EventId, VenueId } from '#/domain/ids.ts'
 import { Result } from '#/shared-kernel/result.ts'
@@ -7,15 +8,18 @@ export interface EventData {
   title: string
   category: string
   startsAt: Date
-  capacity: number
+  capacity: Capacity
   venueId: VenueId
 }
-export type EventInput = Omit<EventData, 'id'>
+export type EventInput = Omit<EventData, 'id' | 'capacity'> & {
+  capacity: number
+}
+export type EventCreationData = EventInput & { id: EventId }
 
 export class Event {
   private constructor(readonly data: Readonly<EventData>) {}
 
-  static create(data: EventData): Result<Event, InvalidInput> {
+  static create(data: EventCreationData): Result<Event, InvalidInput> {
     if (!data.title.trim() || !data.category.trim()) {
       return Result.fail(
         new InvalidInput('Title and category must not be empty'),
@@ -24,16 +28,11 @@ export class Event {
     if (!Number.isFinite(data.startsAt.getTime())) {
       return Result.fail(new InvalidInput('Invalid start date'))
     }
-    if (
-      !Number.isInteger(data.capacity) ||
-      data.capacity < 1 ||
-      data.capacity > 2147483647
-    ) {
-      return Result.fail(
-        new InvalidInput('Capacity must be a positive 32-bit integer'),
-      )
+    const capacity = Capacity.create(data.capacity)
+    if (capacity._tag === 'Failure') {
+      return capacity
     }
-    return Result.succeed(new Event(data))
+    return Result.succeed(new Event({ ...data, capacity: capacity.value }))
   }
 
   update(
@@ -41,7 +40,11 @@ export class Event {
     reservedSeats: number,
     now: Date,
   ): Result<Event, Conflict | InvalidInput> {
-    const result = Event.create({ ...this.data, ...patch })
+    const result = Event.create({
+      ...this.data,
+      capacity: this.data.capacity.value,
+      ...patch,
+    })
     if (result._tag === 'Failure') {
       return result
     }
@@ -49,7 +52,7 @@ export class Event {
     if (this.data.startsAt <= now || updated.data.startsAt <= now) {
       return Result.fail(new Conflict('Only future events can be updated'))
     }
-    if (updated.data.capacity < reservedSeats) {
+    if (!updated.data.capacity.accommodates(reservedSeats)) {
       return Result.fail(
         new Conflict(
           'Capacity cannot be lower than the number of reserved seats',
@@ -72,7 +75,7 @@ export class Event {
     if (this.data.startsAt <= now) {
       return Result.fail(new Conflict('Event has already started'))
     }
-    if (reservedSeats + quantity > this.data.capacity) {
+    if (!this.data.capacity.accommodates(reservedSeats + quantity)) {
       return Result.fail(new Conflict('Not enough seats'))
     }
     return Result.succeed(undefined)

@@ -13,7 +13,10 @@ test('creation generates an event ID and persists the supplied data', () =>
       expect(EventId.parse(event.data.id)).toEqual(
         Result.succeed(event.data.id),
       )
-      expect(event.data).toEqual({ ...eventInput, id: event.data.id })
+      expect({ ...event.data, capacity: event.data.capacity.value }).toEqual({
+        ...eventInput,
+        id: event.data.id,
+      })
       expect(await services.read.get(event.data.id)).toEqual(
         Result.succeed(event),
       )

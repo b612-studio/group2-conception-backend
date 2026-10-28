@@ -280,7 +280,10 @@ export class ValkeyEventRepository implements EventRepository {
         return Option.some(result)
       }
       const next = v.parse(encodeState, {
-        events: state.events.map(({ data }) => data),
+        events: state.events.map(({ data }) => ({
+          ...data,
+          capacity: data.capacity.value,
+        })),
         reservations: state.reservations.map(({ data }) => ({
           ...data,
           cancelledAt: Option.getOrNull(data.cancelledAt),
