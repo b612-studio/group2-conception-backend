@@ -5,7 +5,7 @@ import {
   ValkeyEventRepository,
   type MutationAttempt,
   type RetryPolicy,
-} from '#/infrastructure/valkey-event-repository.ts'
+} from '#/infrastructure/repository/valkey-event-repository.ts'
 
 type Task<Value> = (signal: AbortSignal) => Promise<Value>
 

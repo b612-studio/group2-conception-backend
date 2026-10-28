@@ -283,9 +283,7 @@ export class ValkeyEventRepository implements EventRepository {
         events: state.events.map(({ data }) => data),
         reservations: state.reservations.map(({ data }) => ({
           ...data,
-          cancelledAt: Option.isSome(data.cancelledAt)
-            ? data.cancelledAt.value
-            : null,
+          cancelledAt: Option.getOrNull(data.cancelledAt),
         })),
       })
       signal?.throwIfAborted()

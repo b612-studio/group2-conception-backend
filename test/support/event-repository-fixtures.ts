@@ -2,9 +2,17 @@ import { RedisClient, SQL } from 'bun'
 import { GenericContainer, Wait } from 'testcontainers'
 import type { EventRepository } from '#/application/ports.ts'
 import { UserId, VenueId } from '#/domain/ids.ts'
-import { InMemoryEventRepository } from '#/infrastructure/in-memory-event-repository.ts'
-import { PostgresEventRepository } from '#/infrastructure/postgres-event-repository.ts'
-import { ValkeyEventRepository } from '#/infrastructure/valkey-event-repository.ts'
+import { InMemoryEventRepository } from '#/infrastructure/repository/in-memory-event-repository.ts'
+import { PostgresEventRepository } from '#/infrastructure/repository/postgres-event-repository.ts'
+import { ValkeyEventRepository } from '#/infrastructure/repository/valkey-event-repository.ts'
+import {
+  createKyselyDatabase,
+  KyselyEventRepository,
+} from '#/infrastructure/repository/kysely-event-repository.ts'
+import {
+  createDrizzleDatabase,
+  DrizzleEventRepository,
+} from '#/infrastructure/repository/drizzle-event-repository.ts'
 
 // The same reference records are provided to every adapter.
 export const alice = UserId.makeUnsafe('01900000-0000-7000-8000-000000000001')
@@ -38,7 +46,9 @@ async function inMemory(): Promise<RepositoryFixture> {
   }
 }
 
-async function postgres(): Promise<RepositoryFixture> {
+async function postgres(
+  backend: 'postgres' | 'kysely' | 'drizzle' = 'postgres',
+): Promise<RepositoryFixture> {
   const container = await new GenericContainer('postgres:17-alpine')
     .withEnvironment({
       POSTGRES_DB: 'events',
@@ -58,9 +68,14 @@ async function postgres(): Promise<RepositoryFixture> {
   // init.sql contains BEGIN/COMMIT, so initialization stays on one connection.
   const sql = new SQL(url, { max: 1 })
   const peer = new SQL(url)
+  const adapterClosers: (() => Promise<void>)[] = []
   const close = async () => {
     try {
-      await Promise.all([sql.close(), peer.close()])
+      await Promise.all([
+        sql.close(),
+        peer.close(),
+        ...adapterClosers.map((close) => close()),
+      ])
     } finally {
       await container.stop()
     }
@@ -69,9 +84,22 @@ async function postgres(): Promise<RepositoryFixture> {
     await sql.unsafe(
       await Bun.file(new URL('../../sql/init.sql', import.meta.url)).text(),
     )
+    function createRepository(client: SQL): EventRepository {
+      if (backend === 'kysely') {
+        const db = createKyselyDatabase(url)
+        adapterClosers.push(() => db.destroy())
+        return new KyselyEventRepository(db)
+      }
+      if (backend === 'drizzle') {
+        const { db, close } = createDrizzleDatabase(url)
+        adapterClosers.push(close)
+        return new DrizzleEventRepository(db)
+      }
+      return new PostgresEventRepository(client)
+    }
     return {
-      repository: new PostgresEventRepository(sql),
-      peer: new PostgresEventRepository(peer),
+      repository: createRepository(sql),
+      peer: createRepository(peer),
       async reset() {
         await sql`TRUNCATE reservations, events`
       },
@@ -121,5 +149,7 @@ export const repositoryFactories: {
 }[] = [
   { name: 'in-memory', create: inMemory },
   { name: 'PostgreSQL', create: postgres },
+  { name: 'Kysely', create: () => postgres('kysely') },
+  { name: 'Drizzle', create: () => postgres('drizzle') },
   { name: 'Valkey', create: valkey },
 ]

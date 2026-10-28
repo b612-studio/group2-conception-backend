@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import * as v from 'valibot'
 import { createApp } from '#/app.ts'
 import { createServices } from '#/application/services.ts'
-import { InMemoryEventRepository } from '#/infrastructure/in-memory-event-repository.ts'
+import { InMemoryEventRepository } from '#/infrastructure/repository/in-memory-event-repository.ts'
 import { UserId, VenueId, EventId } from '#/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'
 import {
@@ -78,6 +78,25 @@ async function aReservation() {
     reservation: v.parse(reservationDtoSchema, response.body),
   }
 }
+
+test('REST creation returns the DTO and Location for the persisted event', () =>
+  given(() => ({
+    title: 'Created over HTTP',
+    category: 'testing',
+    startsAt: '2099-06-15T18:00:00.000Z',
+    capacity: 2,
+    venueId,
+  }))
+    .when((input) => http('POST', '/events', input))
+    .then(async (response, input) => {
+      expect(response.status).toBe(201)
+      const event = v.parse(eventDtoSchema, response.body)
+      expect(event).toEqual({ ...input, id: event.id })
+      expect(response.headers.get('Location')).toBe(`/events/${event.id}`)
+      const persisted = await http('GET', `/events/${event.id}`)
+      expect(persisted.status).toBe(200)
+      expect(persisted.body).toEqual(event)
+    }))
 
 test('concurrent REST reservations cannot claim the same last seat', () =>
   given(anEvent)
