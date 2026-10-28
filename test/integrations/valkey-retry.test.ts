@@ -3,7 +3,7 @@ import {
   functionalRetryPolicy,
   retry,
   withTimeout,
-} from '#/infrastructure/valkey-event-repository-functional.ts'
+} from '#/infrastructure/repository/valkey-event-repository-functional.ts'
 import { Option } from '#/shared-kernel/option.ts'
 
 const signal = () => new AbortController().signal
@@ -71,7 +71,7 @@ test('retry exhaustion is bounded and does not sleep after the last attempt', ()
 test('infrastructure failures propagate without retry', () => {
   const error = new Error('connection lost')
   let calls = 0
-  const run = functionalRetryPolicy({ sleep: async () => {} })
+  const run = functionalRetryPolicy({ sleep: async () => { } })
   expect(
     run(async () => {
       calls++
@@ -85,7 +85,7 @@ test('timeout rejects a stalled operation and aborts its signal', () => {
   let received: AbortSignal | undefined
   const run = withTimeout(10, async (abortSignal) => {
     received = abortSignal
-    return new Promise<never>(() => {})
+    return new Promise<never>(() => { })
   })
   expect(run()).rejects.toThrow('timed out')
   expect(received?.aborted).toBe(true)
@@ -93,7 +93,7 @@ test('timeout rejects a stalled operation and aborts its signal', () => {
 
 test('deadline covers backoff and prevents attempts after timeout', async () => {
   let calls = 0
-  let release: () => void = () => {}
+  let release: () => void = () => { }
   let backoff: Promise<void> | undefined
   const run = functionalRetryPolicy({
     timeoutMs: 10,
@@ -128,7 +128,7 @@ test('already aborted tasks perform no attempt', () => {
     {
       maxAttempts: 3,
       delay: () => 0,
-      sleep: async () => {},
+      sleep: async () => { },
     },
   )
   expect(task(controller.signal)).rejects.toThrow('stopped')
@@ -140,7 +140,7 @@ test('invalid retry and timeout configuration fails before execution', () => {
     retry(async () => Option.none(), {
       maxAttempts: 0,
       delay: () => 0,
-      sleep: async () => {},
+      sleep: async () => { },
     }),
   ).toThrow('positive integer')
   expect(() => withTimeout(0, async () => 'done')).toThrow(

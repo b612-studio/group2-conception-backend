@@ -2,7 +2,7 @@
 
 A Hono API for events and reservations. REST controllers call application operations,
 which enforce domain rules through a repository interface. PostgreSQL is the default;
-Valkey and in-memory implementations are also available.
+Kysely, Drizzle, Valkey and in-memory implementations are also available.
 
 ## Run locally
 
@@ -18,6 +18,37 @@ bun run dev
 The API binds to http://127.0.0.1:3000. PostgreSQL runs on localhost:55432.
 Change `POSTGRES_PORT` and `DATABASE_URL` together if needed. `ADMINER_PORT` configures
 the database web interface. `PORT` sets the API port. No model API key is needed.
+
+### Teacher variants: Kysely and Drizzle
+
+Compare the same repository contract with raw SQL, a typed query builder, and an ORM:
+
+```sh
+EVENT_REPOSITORY=kysely bun run dev
+EVENT_REPOSITORY=drizzle bun run dev
+```
+
+Both variants use `DATABASE_URL` and the same PostgreSQL tables and data as the
+raw SQL adapter. Switching between them does not copy or reset records.
+
+Repository implementations live in `src/infrastructure/repository/`.
+Schemas, entity mappers and the database helper stay in `src/infrastructure/`:
+
+| Adapter | Repository                     | Type description                                                  |
+| ------- | ------------------------------ | ----------------------------------------------------------------- |
+| Raw SQL | `postgres-event-repository.ts` | Existing entity types                                             |
+| Kysely  | `kysely-event-repository.ts`   | `kysely-schema.ts`, compile-time table types                      |
+| Drizzle | `drizzle-event-repository.ts`  | `drizzle-schema.ts`, table declarations with inferred query types |
+
+Kysely is a typed SQL query builder, not an ORM. Drizzle describes columns at runtime
+and infers query types from them. Both use the `pg` driver, reuse the existing domain
+mappers, and keep SQL `NULL` at the driver boundary. They lock the event row inside a
+transaction before reading reserved seats, just like the raw SQL version.
+
+There is no code generation, migration runner, or Drizzle Kit setup. `sql/init.sql`
+remains the source of truth for DDL, constraints, indexes and seeds. The TypeScript
+schemas describe existing tables for queries; changing them does not alter the database.
+Apply database changes through SQL and update the descriptions to match.
 
 ### Valkey alternative
 
@@ -41,7 +72,7 @@ retries concurrent writes, so capacity checks cannot overbook across API process
 Mutation callbacks can run more than once and must not perform external side effects.
 All records are read for each operation, so this design is not intended for large datasets.
 
-The second implementation, `src/infrastructure/valkey-event-repository-functional.ts`,
+The second implementation, `src/infrastructure/repository/valkey-event-repository-functional.ts`,
 reuses the codec and storage operations but composes `withTimeout(retry(attempt))`.
 Select it with `EVENT_REPOSITORY=valkey-functional`. Retry uses asynchronous recursion
 with injectable backoff and sleep functions, not a loop. Both versions retry only
@@ -126,7 +157,8 @@ src/
   application/          Focused handlers, reads, identity and repository interface
   domain/               Event and reservation rules; branded UUID-v7 identifiers
   shared-kernel/        Option and Result, without framework dependencies
-  infrastructure/       PostgreSQL, Valkey and in-memory repositories, entity mappings
+  infrastructure/       Query schemas, entity mappings and database helper
+    repository/         Repository implementations
   presentation/         Valibot DTO schemas and domain-to-DTO presenters
   validation.ts         Valibot request schemas and branded ID conversion
 sql/init.sql            PostgreSQL schema and seeds
@@ -235,6 +267,7 @@ bun run format
 bun run lint:fix
 bun run check
 bun run test
+bun run test:application
 bun run test:transports
 bun run test:contract
 ```
@@ -243,19 +276,38 @@ Oxfmt targets 80 columns, with exceptions for unbreakable strings. Oxlint requir
 braces around conditionals and loops. `check` checks formatting, lint rules and types.
 
 `test` runs the whole suite and requires Docker for repository contracts.
+`test:application` runs the use-case suites without Docker or an HTTP server.
 `test:transports` runs REST tests against an ephemeral loopback HTTP server with an
-in-memory repository. Domain, backend and retry tests also need no external database.
+in-memory repository. Domain, application and retry tests need no external database.
 Tests never touch the demo database.
 
-Tests execute Given/When/Then functions: `given(setup).when(action).then(assertion)`
-passes typed fixtures and outcomes through the stages. Coverage includes domain Results,
-UUID-v7 parsing, immutable updates, Option cancellation state, REST validation and status
-mapping, concurrent last-seat booking, capacity rejection, ownership and repeated cancellation.
+Application and transport scenarios use Given/When/Then functions:
+`given(setup).when(action).then(assertion)` passes typed fixtures and outcomes
+through the stages. Setup creates the preconditions, the action invokes the use
+case, and assertions check both its result and observable persisted state.
+Follow-up operations can verify that a rejected write did not consume capacity.
+
+### Use-case tests
+
+`test/application/` replaces the mixed `backend.test.ts` suite with one file per
+application handler: create, update, reserve, cancel, read and demo identity.
+Tests call handlers through `createServices`, without controllers, routes or DTOs.
+`test/support/application-fixture.ts` provides a fresh in-memory repository,
+known users and venue, a controllable clock, and small event/reservation fixtures
+for each scenario. No mutable state is shared between tests.
+
+These suites cover successful writes and reads, missing records, invalid input
+and references, clock boundaries, capacity, ownership, repeated cancellation,
+filtering and reservation visibility. Failed mutations must leave stored values
+unchanged. Concurrent last-seat booking checks application behavior against the
+in-memory fake, not database locking. Repository contracts prove the adapter
+behavior separately. HTTP creation, Location headers, DTOs, validation and status
+mapping remain in `test/transports.test.ts`.
 
 ### Repository contract tests
 
 `test/event-repository.test.ts` runs the same tests with `describe.each` against
-three implementations: in-memory, PostgreSQL and the original Valkey adapter.
+five implementations: in-memory, raw PostgreSQL, Kysely, Drizzle and the original Valkey adapter.
 The functional Valkey variant is not part of this comparison.
 
 Tests call the `EventRepository` interface directly, without application services

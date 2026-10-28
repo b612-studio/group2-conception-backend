@@ -76,7 +76,7 @@ describe.each(repositoryFactories)(
 
     beforeAll(async () => {
       fixture = await create()
-    }, 120_000)
+    })
     beforeEach(async () => {
       await fixture!.reset()
       repository = fixture!.repository
@@ -84,7 +84,7 @@ describe.each(repositoryFactories)(
     })
     afterAll(async () => {
       await fixture?.close()
-    }, 30_000)
+    })
 
     async function storeEvent(overrides: Partial<EventData> = {}) {
       const event = anEvent(overrides)

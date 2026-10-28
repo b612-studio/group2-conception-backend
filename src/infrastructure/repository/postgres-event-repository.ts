@@ -134,9 +134,7 @@ export class PostgresEventRepository implements EventRepository {
         return updated
       }
       const entity = reservationToEntity(updated.value)
-      const cancelledAt = Option.isSome(entity.cancelled_at)
-        ? entity.cancelled_at.value
-        : null
+      const cancelledAt = Option.getOrNull(entity.cancelled_at)
       await tx`UPDATE reservations SET cancelled_at = ${cancelledAt} WHERE id = ${id}`
       return updated
     })

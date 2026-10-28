@@ -15,6 +15,8 @@ export const Option = {
   some: <Value>(value: Value): Option<Value> => ({ _tag: 'Some', value }),
   fromNullable: <Value>(value: Value | null | undefined): Option<Value> =>
     value === null || value === undefined ? noneValue : { _tag: 'Some', value },
+  getOrNull: <Value>(option: Option<Value>): Value | null =>
+    option._tag === 'Some' ? option.value : null,
   isNone: <Value>(option: Option<Value>): option is None =>
     option._tag === 'None',
   isSome: <Value>(option: Option<Value>): option is Some<Value> =>

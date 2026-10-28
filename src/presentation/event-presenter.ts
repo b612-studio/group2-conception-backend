@@ -29,9 +29,9 @@ export function presentReservation(reservation: Reservation): ReservationDto {
     userId: reservation.data.userId,
     quantity: reservation.data.quantity,
     createdAt: reservation.data.createdAt.toISOString(),
-    cancelledAt: Option.isSome(reservation.data.cancelledAt)
-      ? reservation.data.cancelledAt.value.toISOString()
-      : null,
+    cancelledAt: Option.getOrNull(
+      Option.map(reservation.data.cancelledAt, (date) => date.toISOString()),
+    ),
   })
 }
 
