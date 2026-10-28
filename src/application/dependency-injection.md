@@ -3,7 +3,7 @@
 Dependency injection, or DI, means supplying an object's dependencies from the
 outside instead of having that object construct them.
 
-[CreateEventHandler](create-event.ts) receives an `EventRepository`, a `Clock` and
+[CreateEventUseCase](commands/create-event.ts) receives an `EventRepository`, a `Clock` and
 an `IdGenerator` through its constructor. It does not open a database connection,
 read the system clock directly or choose its own identifier implementation.
 
@@ -12,6 +12,14 @@ read the system clock directly or choose its own identifier implementation.
 [services.ts](services.ts) groups the application operations and passes their
 dependencies into their constructors. `createServices` is a factory, not a DI
 container or a service locator. Callers receive the resulting services directly.
+
+Write use cases live in `commands/` and implement the shared
+[CommandHandler](../shared-kernel/command-handler.ts) interface. Read use cases
+live in `queries/` and implement [QueryHandler](../shared-kernel/query-handler.ts).
+Each use case exposes `execute` with one command or query argument. The `read`
+group in `services.ts` contains query use cases, not a multi-method read service.
+Both groups use the same repository; this split does not introduce separate
+read and write stores.
 
 [bootstrap.ts](../bootstrap.ts) is the composition root. It chooses a persistence
 adapter from configuration, creates its client, passes the repository to
@@ -43,4 +51,3 @@ which module owns the abstraction. Here the application owns `EventRepository`,
 and infrastructure implements it. Supplying a concrete SQL client to every
 handler would still be injection, but would not give us that same independence
 from the database library.
-

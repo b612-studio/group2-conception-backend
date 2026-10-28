@@ -5,7 +5,10 @@ import { presentReservation } from '#/presentation/event-presenter.ts'
 import { requestUser } from '#/request.ts'
 import { Option } from '#/shared-kernel/option.ts'
 
-export function createUserController({ read, identity }: Services) {
+export function createUserQueryController({
+  read,
+  identity,
+}: Pick<Services, 'read' | 'identity'>) {
   return {
     reservations: async (context: Context) => {
       const user = await requestUser(
@@ -15,10 +18,13 @@ export function createUserController({ read, identity }: Services) {
       if (user._tag === 'Failure') {
         return httpFailure(context, user.error)
       }
+      const reservations = await read.reservationsFor.execute(user.value)
       return context.json(
-        (await read.reservationsFor(user.value)).map(presentReservation),
+        (reservations).map(
+          presentReservation,
+        ),
       )
     },
   }
 }
-export type UserController = ReturnType<typeof createUserController>
+export type UserQueryController = ReturnType<typeof createUserQueryController>

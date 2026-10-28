@@ -23,7 +23,7 @@ application supplies it through an injected `Clock`. Tests can check the exact
 start-time boundary without waiting for real time to pass.
 
 Not every business-related condition currently lives on an entity. For example,
-[CreateEventHandler](../application/create-event.ts) requires a future start date.
+[CreateEventUseCase](../application/commands/create-event.ts) requires a future start date.
 `Event.create` accepts a past date because persistence must also reconstruct
 events that have already happened. Construction and permission to create a new
 event are different operations here.

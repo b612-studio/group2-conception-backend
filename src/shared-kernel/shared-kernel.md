@@ -8,6 +8,12 @@ or absence. Domain rules, application handlers and infrastructure adapters use
 the same definitions, so they do not need translations between competing
 representations at every call.
 
+[CommandHandler](command-handler.ts) and [QueryHandler](query-handler.ts) define
+`execute(command): Promise<Result>` and `execute(query): Promise<Result>`.
+Application command and query use cases implement these contracts. Here `Result`
+is a generic return type, not necessarily the shared `Result` union. A query can
+return an array, while a command can return a success-or-failure value.
+
 ## Why keep it separate
 
 Putting `Result` in a controller module would force domain code to import from

@@ -1,4 +1,6 @@
 import { Event, type EventInput } from '#/domain/event.ts'
+import type { CommandHandler } from '#/shared-kernel/command-handler.ts'
+import type { ApplicationError } from '#/application/ports.ts'
 import type { EventId } from '#/domain/ids.ts'
 import { InvalidInput } from '#/domain/errors.ts'
 import { Result } from '#/shared-kernel/result.ts'
@@ -8,7 +10,10 @@ import type {
   IdGenerator,
 } from '#/application/ports.ts'
 
-export class CreateEventHandler {
+export class CreateEventUseCase implements CommandHandler<
+  EventInput,
+  Result<Event, ApplicationError>
+> {
   constructor(
     private readonly repository: EventRepository,
     private readonly clock: Clock,

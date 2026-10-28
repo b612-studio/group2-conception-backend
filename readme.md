@@ -118,6 +118,7 @@ These guides explain the patterns through this lesson's implementation:
 - [DTOs and presenters](src/presentation/dto-and-presenter.md): public JSON versus internal representations.
 - [Controllers](src/controllers/controller.md): HTTP translation without business or persistence rules.
 - [Services and dependency injection](src/application/dependency-injection.md): constructor dependencies and startup wiring.
+- [BDD and fluent test APIs](test/bdd.md): behavior-focused scenarios, given/when/then and method chaining.
 
 ### Persistence adapters
 
