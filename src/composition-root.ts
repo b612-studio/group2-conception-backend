@@ -1,5 +1,5 @@
-import { Container } from '#/container.ts'
-import { TOKEN } from '#/tokens.ts'
+import { Container } from '#/infrastructure/di/container.ts'
+import { TOKEN } from '#/infrastructure/di/tokens.ts'
 import { createApp } from '#/app.ts'
 import { CreateEventUseCase } from '#/application/commands/create-event.ts'
 import { UpdateEventUseCase } from '#/application/commands/update-event.ts'
@@ -18,18 +18,20 @@ import { createEventCommandController } from '#/controllers/commands/event-contr
 import { createEventQueryController } from '#/controllers/queries/event-controller.ts'
 import { createUserQueryController } from '#/controllers/queries/user-controller.ts'
 import { makeId } from '#/domain/ids.ts'
-import type { ApplicationEvent } from '#/domain/domain-events.ts'
+import type { DomainEvent } from '#/domain/domain-events.ts'
+import type { EventEnvelope } from '#/shared-kernel/event-envelope.ts'
 import {
   MockNotificationService,
   type NotificationLogger,
-} from '#/infrastructure/mock-notification-service.ts'
-import { InMemoryEventBus, type EventBus } from '#/shared-kernel/event-bus.ts'
+} from '#/infrastructure/notifications/mock-notification-service.ts'
+import type { EventBus } from '#/shared-kernel/event-bus.ts'
+import { InMemoryEventBus } from '#/infrastructure/messaging/in-memory-event-bus.ts'
 
 export interface ContainerOptions {
   repository: EventRepository
   clock?: Clock
   ids?: IdGenerator
-  eventBus?: EventBus<ApplicationEvent>
+  eventBus?: EventBus<EventEnvelope<DomainEvent>>
   notificationLogger?: NotificationLogger
 }
 
@@ -42,7 +44,8 @@ export function createContainer(options: ContainerOptions): Container {
     .singleton(TOKEN.IdGenerator, () => options.ids ?? { next: makeId })
     .singleton(
       TOKEN.EventBus,
-      () => options.eventBus ?? new InMemoryEventBus<ApplicationEvent>(),
+      () =>
+        options.eventBus ?? new InMemoryEventBus<EventEnvelope<DomainEvent>>(),
     )
     .singleton(
       TOKEN.NotificationService,
@@ -74,6 +77,7 @@ export function createContainer(options: ContainerOptions): Container {
         new UpdateEventUseCase(
           c.resolve(TOKEN.EventRepository),
           c.resolve(TOKEN.Clock),
+          c.resolve(TOKEN.IdGenerator),
           c.resolve(TOKEN.EventBus),
         ),
     )
@@ -93,35 +97,21 @@ export function createContainer(options: ContainerOptions): Container {
         new CancelReservationUseCase(
           c.resolve(TOKEN.EventRepository),
           c.resolve(TOKEN.Clock),
+          c.resolve(TOKEN.IdGenerator),
           c.resolve(TOKEN.EventBus),
         ),
     )
     .singleton(
       TOKEN.ListEventsUseCase,
-      (c) =>
-        new ListEventsUseCase(
-          c.resolve(TOKEN.EventRepository),
-          c.resolve(TOKEN.Clock),
-          c.resolve(TOKEN.EventBus),
-        ),
+      (c) => new ListEventsUseCase(c.resolve(TOKEN.EventRepository)),
     )
     .singleton(
       TOKEN.GetEventUseCase,
-      (c) =>
-        new GetEventUseCase(
-          c.resolve(TOKEN.EventRepository),
-          c.resolve(TOKEN.Clock),
-          c.resolve(TOKEN.EventBus),
-        ),
+      (c) => new GetEventUseCase(c.resolve(TOKEN.EventRepository)),
     )
     .singleton(
       TOKEN.ListReservationsUseCase,
-      (c) =>
-        new ListReservationsUseCase(
-          c.resolve(TOKEN.EventRepository),
-          c.resolve(TOKEN.Clock),
-          c.resolve(TOKEN.EventBus),
-        ),
+      (c) => new ListReservationsUseCase(c.resolve(TOKEN.EventRepository)),
     )
     .singleton(TOKEN.EventCommandController, (c) =>
       createEventCommandController({

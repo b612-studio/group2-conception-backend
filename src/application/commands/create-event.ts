@@ -10,7 +10,8 @@ import type {
   IdGenerator,
 } from '#/application/ports.ts'
 import type { EventBus } from '#/shared-kernel/event-bus.ts'
-import { domainEvent, type ApplicationEvent } from '#/domain/domain-events.ts'
+import type { DomainEvent } from '#/domain/domain-events.ts'
+import type { EventEnvelope } from '#/shared-kernel/event-envelope.ts'
 
 export class CreateEventUseCase implements CommandHandler<
   EventInput,
@@ -20,7 +21,7 @@ export class CreateEventUseCase implements CommandHandler<
     private readonly repository: EventRepository,
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
-    private readonly eventBus: EventBus<ApplicationEvent>,
+    private readonly eventBus: EventBus<EventEnvelope<DomainEvent>>,
   ) {}
 
   async execute(input: EventInput) {
@@ -35,10 +36,13 @@ export class CreateEventUseCase implements CommandHandler<
     const persisted = await this.repository.createEvent(result.value)
     if (Result.isSuccess(persisted)) {
       const success = persisted.value.data
-      await this.eventBus.publish(
-        domainEvent(
-          'EventCreated',
-          {
+      await this.eventBus.publish({
+        messageId: this.ids.next<string>(),
+        occurredAt: now,
+        version: 1,
+        event: {
+          type: 'EventCreated',
+          content: {
             eventId: success.id,
             title: success.title,
             category: success.category,
@@ -46,9 +50,8 @@ export class CreateEventUseCase implements CommandHandler<
             capacity: success.capacity.value,
             venueId: success.venueId,
           },
-          now,
-        ),
-      )
+        },
+      })
     }
     return persisted
   }

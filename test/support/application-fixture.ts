@@ -1,6 +1,7 @@
 import { createContainer } from '#/composition-root.ts'
-import { TOKEN } from '#/tokens.ts'
-import type { ApplicationEvent } from '#/domain/domain-events.ts'
+import { TOKEN } from '#/infrastructure/di/tokens.ts'
+import type { DomainEvent } from '#/domain/domain-events.ts'
+import type { EventEnvelope } from '#/shared-kernel/event-envelope.ts'
 import type { EventInput } from '#/domain/event.ts'
 import { UserId, VenueId } from '#/domain/ids.ts'
 import { InMemoryEventRepository } from '#/infrastructure/repository/in-memory-event-repository.ts'
@@ -16,7 +17,7 @@ export function anApplication() {
     users: new Set([alice, bob]),
     venues: new Set([venueId]),
   })
-  const notifications: ApplicationEvent[] = []
+  const notifications: EventEnvelope<DomainEvent>[] = []
   const container = createContainer({
     repository,
     clock: { now: () => new Date(now) },

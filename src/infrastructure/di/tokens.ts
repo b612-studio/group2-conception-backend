@@ -15,16 +15,17 @@ import type { ListReservationsUseCase } from '#/application/queries/list-reserva
 import type { EventCommandController } from '#/controllers/commands/event-controller.ts'
 import type { EventQueryController } from '#/controllers/queries/event-controller.ts'
 import type { UserQueryController } from '#/controllers/queries/user-controller.ts'
-import type { ApplicationEvent } from '#/domain/domain-events.ts'
-import type { MockNotificationService } from '#/infrastructure/mock-notification-service.ts'
+import type { DomainEvent } from '#/domain/domain-events.ts'
+import type { EventEnvelope } from '#/shared-kernel/event-envelope.ts'
+import type { MockNotificationService } from '#/infrastructure/notifications/mock-notification-service.ts'
 import type { EventBus, Unsubscribe } from '#/shared-kernel/event-bus.ts'
-import { createToken } from '#/shared-kernel/token.ts'
+import { createToken } from '#/infrastructure/di/token.ts'
 
 export const TOKEN = {
   EventRepository: createToken<EventRepository>('EventRepository'),
   Clock: createToken<Clock>('Clock'),
   IdGenerator: createToken<IdGenerator>('IdGenerator'),
-  EventBus: createToken<EventBus<ApplicationEvent>>('EventBus'),
+  EventBus: createToken<EventBus<EventEnvelope<DomainEvent>>>('EventBus'),
   NotificationService: createToken<MockNotificationService>(
     'NotificationService',
   ),

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import * as v from 'valibot'
 import { createContainer } from '#/composition-root.ts'
-import { TOKEN } from '#/tokens.ts'
+import { TOKEN } from '#/infrastructure/di/tokens.ts'
 import { InMemoryEventRepository } from '#/infrastructure/repository/in-memory-event-repository.ts'
 import { UserId, VenueId, EventId } from '#/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'

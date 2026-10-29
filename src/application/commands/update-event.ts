@@ -1,11 +1,16 @@
 import type { CommandHandler } from '#/shared-kernel/command-handler.ts'
 import { Result } from '#/shared-kernel/result.ts'
 import type { EventBus } from '#/shared-kernel/event-bus.ts'
-import { domainEvent, type ApplicationEvent } from '#/domain/domain-events.ts'
+import type { DomainEvent } from '#/domain/domain-events.ts'
+import type { EventEnvelope } from '#/shared-kernel/event-envelope.ts'
 import type { ApplicationError } from '#/application/ports.ts'
 import type { Event, EventInput } from '#/domain/event.ts'
 import type { EventId } from '#/domain/ids.ts'
-import type { Clock, EventRepository } from '#/application/ports.ts'
+import type {
+  Clock,
+  EventRepository,
+  IdGenerator,
+} from '#/application/ports.ts'
 
 export interface UpdateEventCommand {
   id: EventId
@@ -19,7 +24,8 @@ export class UpdateEventUseCase implements CommandHandler<
   constructor(
     private readonly repository: EventRepository,
     private readonly clock: Clock,
-    private readonly eventBus: EventBus<ApplicationEvent>,
+    private readonly ids: IdGenerator,
+    private readonly eventBus: EventBus<EventEnvelope<DomainEvent>>,
   ) {}
 
   async execute({ id, patch }: UpdateEventCommand) {
@@ -28,10 +34,13 @@ export class UpdateEventUseCase implements CommandHandler<
     )
     if (Result.isSuccess(result)) {
       const event = result.value.data
-      await this.eventBus.publish(
-        domainEvent(
-          'EventUpdated',
-          {
+      await this.eventBus.publish({
+        messageId: this.ids.next<string>(),
+        occurredAt: this.clock.now(),
+        version: 1,
+        event: {
+          type: 'EventUpdated',
+          content: {
             eventId: event.id,
             title: event.title,
             category: event.category,
@@ -39,9 +48,8 @@ export class UpdateEventUseCase implements CommandHandler<
             capacity: event.capacity.value,
             venueId: event.venueId,
           },
-          this.clock.now(),
-        ),
-      )
+        },
+      })
     }
     return result
   }
