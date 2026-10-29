@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import * as v from 'valibot'
-import { createApp } from '#/app.ts'
-import { createServices } from '#/application/services.ts'
+import { createContainer } from '#/composition-root.ts'
+import { TOKEN } from '#/tokens.ts'
 import { InMemoryEventRepository } from '#/infrastructure/repository/in-memory-event-repository.ts'
 import { UserId, VenueId, EventId } from '#/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'
@@ -23,9 +23,12 @@ let server: ReturnType<typeof Bun.serve>
 let url: string
 
 beforeAll(() => {
-  const app = createApp(
-    createServices(repository, { now: () => new Date('2030-01-01T00:00:00Z') }),
-  )
+  const container = createContainer({
+    repository,
+    clock: { now: () => new Date('2030-01-01T00:00:00Z') },
+    notificationLogger: { log: () => {} },
+  })
+  const app = container.resolve(TOKEN.App)
   server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: app.fetch })
   url = server.url.origin
 })

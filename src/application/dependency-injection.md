@@ -1,53 +1,69 @@
-# Services and dependency injection
+# Container and dependency injection
 
-Dependency injection, or DI, means supplying an object's dependencies from the
-outside instead of having that object construct them.
+Dependency injection means supplying dependencies from outside an object instead
+of having that object construct them. Use cases receive a repository, clock,
+ID generator where needed, and an event bus through their constructors. They do
+not resolve tokens, open database connections or depend on Hono.
 
-[CreateEventUseCase](commands/create-event.ts) receives an `EventRepository`, a `Clock` and
-an `IdGenerator` through its constructor. It does not open a database connection,
-read the system clock directly or choose its own identifier implementation.
+## Composition root
 
-## Where we assemble the application
+[container.ts](../container.ts) implements typed singleton and factory
+registrations. It has no application registrations or infrastructure imports.
+[Token creation](../shared-kernel/token.ts) is separate from the
+[application token registry](../tokens.ts).
 
-[services.ts](services.ts) groups the application operations and passes their
-dependencies into their constructors. `createServices` is a factory, not a DI
-container or a service locator. Callers receive the resulting services directly.
+[composition-root.ts](../composition-root.ts) registers the repository, clock,
+ID generator, event bus, notification subscriber, identity helper, seven use
+cases, controllers and HTTP application. Registrations are singletons within
+one container. Separate containers have independent apps and event buses.
+Controllers receive explicit dependencies, not a container or a Services bag.
 
-Write use cases live in `commands/` and implement the shared
-[CommandHandler](../shared-kernel/command-handler.ts) interface. Read use cases
-live in `queries/` and implement [QueryHandler](../shared-kernel/query-handler.ts).
-Each use case exposes `execute` with one command or query argument. The `read`
-group in `services.ts` contains query use cases, not a multi-method read service.
-Both groups use the same repository; this split does not introduce separate
-read and write stores.
+[bootstrap.ts](../bootstrap.ts) selects a persistence adapter through
+[infrastructure/persistence.ts](../infrastructure/persistence.ts), creates the
+container and resolves `TOKEN.App`. It starts the server and owns shutdown,
+unsubscribing notifications before closing persistence. PostgreSQL, Kysely,
+Drizzle and both Valkey implementations use the same application registrations.
 
-[bootstrap.ts](../bootstrap.ts) is the composition root. It chooses a persistence
-adapter from configuration, creates its client, passes the repository to
-`createServices`, then supplies those services to the HTTP application. It also
-owns connection cleanup on shutdown.
+Only [app.ts](../app.ts) calls `new Hono()`. Route modules register handlers on
+that instance rather than allocating child applications.
 
-The default clock uses `new Date()`, and the default generator makes UUID v7 IDs.
-Their implementations are selected outside the handlers. Controllers likewise
-receive services instead of creating handlers or repositories themselves.
+Tests call the same `createContainer` with an in-memory repository, fixed clock
+and capturing notification logger. The [application fixture](../../test/support/application-fixture.ts)
+keeps its convenience use-case grouping locally; there is no production
+`application/services.ts` factory.
 
-## Why inject these dependencies
+## Events and mock notifications
 
-Tests can supply an in-memory repository, a fixed clock and controlled IDs. They
-exercise the same handler logic without a live database or dependence on the
-current date. See the [application fixture](../../test/support/application-fixture.ts).
+The [event definitions](../domain/domain-events.ts) describe four command facts:
+`EventCreated`, `EventUpdated`, `EventReserved` and `ReservationCancelled`.
+Create and update include the persisted event details. Reservation events include
+booking, event and owner IDs plus quantity. `context` contains the injected-clock
+occurrence time and schema version `v1`.
 
-Production can select PostgreSQL, Kysely, Drizzle or Valkey without changing the
-handler constructors. The [repository contract](ports.ts) specifies the operations
-each adapter must provide.
+To observe every use case, successful queries also publish `EventViewed`,
+`EventsListed` and `ReservationsListed`. These are application read observations,
+not domain mutations. List observations include a count, not the result arrays.
+Missing-event reads and failed commands emit no success event. The demo identity
+helper is not a use case and does not publish events.
 
-A domain entity does not need to receive all of these services. The application
-passes it the data it needs, such as `now` and the reserved-seat count. This keeps
-database access out of entity methods.
+Use cases await publication after the repository returns success. They never
+publish inside repository callbacks, which can be retried. The shared
+[InMemoryEventBus](../shared-kernel/event-bus.ts) snapshots listeners, runs them
+concurrently and awaits all of them. It logs both synchronous and asynchronous
+listener failures without rejecting a committed command.
 
-## Injection and inversion are different ideas
+The [mock notification service](../infrastructure/mock-notification-service.ts)
+subscribes once during container creation and logs every event. It sends no real
+notifications. `TOKEN.NotificationSubscription` resolves to its unsubscribe
+function. Production and tests use the same event-bus implementation.
+
+This bus is process-local and has no durable delivery or replay. A crash between
+persistence and publication can lose notifications. Use an outbox if delivery
+must survive process failure.
+
+## Injection and inversion
 
 Injection is how an implementation is supplied. Dependency inversion is about
-which module owns the abstraction. Here the application owns `EventRepository`,
-and infrastructure implements it. Supplying a concrete SQL client to every
-handler would still be injection, but would not give us that same independence
-from the database library.
+which module owns the abstraction. The application owns `EventRepository`, and
+infrastructure implements it. Domain entities receive data such as `now` and
+reserved-seat counts, not a container or repository.

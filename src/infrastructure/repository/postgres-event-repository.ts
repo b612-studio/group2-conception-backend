@@ -25,7 +25,7 @@ const reservationColumns =
   'id, event_id, user_id, quantity, created_at, cancelled_at'
 
 export class PostgresEventRepository implements EventRepository {
-  constructor(private readonly sql: SQL) {}
+  constructor(private readonly sql: SQL) { }
 
   async listEvents(filter: EventFilter) {
     const rows = await this.sql<EventEntity[]>`
@@ -141,7 +141,7 @@ export class PostgresEventRepository implements EventRepository {
   }
 
   async userExists(id: UserId) {
-    const rows = await this.sql`SELECT id FROM users WHERE id = ${id}`
+    const rows = await this.sql`SELECT EXISTS (SELECT id FROM users WHERE id = ${id}) as exist`
     return rows.length > 0
   }
 
