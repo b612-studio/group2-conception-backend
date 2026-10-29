@@ -1,4 +1,6 @@
-import { createServices } from '#/application/services.ts'
+import { createContainer } from '#/composition-root.ts'
+import { TOKEN } from '#/tokens.ts'
+import type { ApplicationEvent } from '#/domain/domain-events.ts'
 import type { EventInput } from '#/domain/event.ts'
 import { UserId, VenueId } from '#/domain/ids.ts'
 import { InMemoryEventRepository } from '#/infrastructure/repository/in-memory-event-repository.ts'
@@ -14,7 +16,28 @@ export function anApplication() {
     users: new Set([alice, bob]),
     venues: new Set([venueId]),
   })
-  const services = createServices(repository, { now: () => new Date(now) })
+  const notifications: ApplicationEvent[] = []
+  const container = createContainer({
+    repository,
+    clock: { now: () => new Date(now) },
+    notificationLogger: {
+      log: (_message, event) => {
+        notifications.push(event)
+      },
+    },
+  })
+  const services = {
+    identity: container.resolve(TOKEN.Identity),
+    read: {
+      list: container.resolve(TOKEN.ListEventsUseCase),
+      get: container.resolve(TOKEN.GetEventUseCase),
+      reservationsFor: container.resolve(TOKEN.ListReservationsUseCase),
+    },
+    create: container.resolve(TOKEN.CreateEventUseCase),
+    update: container.resolve(TOKEN.UpdateEventUseCase),
+    reserve: container.resolve(TOKEN.ReserveEventUseCase),
+    cancel: container.resolve(TOKEN.CancelReservationUseCase),
+  }
   const eventInput: EventInput = {
     title: 'Game night',
     category: 'gaming',
@@ -28,6 +51,8 @@ export function anApplication() {
     bob,
     venueId,
     repository,
+    container,
+    notifications,
     services,
     eventInput,
     advanceTo(date: Date) {

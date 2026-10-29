@@ -1,5 +1,6 @@
 import type { Context } from 'hono'
-import type { Services } from '#/application/services.ts'
+import type { DemoIdentity } from '#/application/demo-identity.ts'
+import type { ListReservationsUseCase } from '#/application/queries/list-reservations.ts'
 import { httpFailure } from '#/controllers/http-result.ts'
 import { presentReservation } from '#/presentation/event-presenter.ts'
 import { requestUser } from '#/request.ts'
@@ -7,9 +8,12 @@ import { Option } from '#/shared-kernel/option.ts'
 import { Result } from '#/shared-kernel/result.ts'
 
 export function createUserQueryController({
-  read,
+  reservationsFor,
   identity,
-}: Pick<Services, 'read' | 'identity'>) {
+}: {
+  reservationsFor: ListReservationsUseCase
+  identity: DemoIdentity
+}) {
   return {
     reservations: async (context: Context) => {
       const user = await requestUser(
@@ -19,7 +23,7 @@ export function createUserQueryController({
       if (Result.isFailure(user)) {
         return httpFailure(context, user.error)
       }
-      const reservations = await read.reservationsFor.execute(user.value)
+      const reservations = await reservationsFor.execute(user.value)
       return context.json(reservations.map(presentReservation))
     },
   }

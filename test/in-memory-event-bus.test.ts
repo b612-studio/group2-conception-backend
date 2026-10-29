@@ -1,37 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 
-type EventListener<Event> = (event: Event) => void | Promise<void>
-
-interface EventBus<Event> {
-  publish(event: Event): Promise<void>
-  subscribe(listener: EventListener<Event>): () => void
-}
-
-class InMemoryEventBus<Event> implements EventBus<Event> {
-  private readonly listeners = new Map<symbol, EventListener<Event>>()
-
-  /** Waits for all current listeners and logs failures without rejecting. */
-  async publish(event: Event): Promise<void> {
-    const results = await Promise.allSettled(
-      [...this.listeners.values()].map((listener) => listener(event)),
-    )
-
-    for (const result of results) {
-      if (result.status === 'rejected') {
-        console.error('Event listener failed', result.reason)
-      }
-    }
-  }
-
-  /** Unsubscribing affects future publishes, not calls already in progress. */
-  subscribe(listener: EventListener<Event>): () => void {
-    const key = Symbol('event-listener')
-    this.listeners.set(key, listener)
-    return () => {
-      this.listeners.delete(key)
-    }
-  }
-}
+import { InMemoryEventBus, type EventBus } from '#/shared-kernel/event-bus.ts'
 
 function deferred() {
   let resolve!: () => void

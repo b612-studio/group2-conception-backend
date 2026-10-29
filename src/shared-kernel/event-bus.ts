@@ -1,59 +1,39 @@
 export interface DomainEvent {
-  context: unknown
-  content: unknown
+  readonly type: string
+  readonly context: { readonly occurredAt: Date; readonly version: 'v1' }
+  readonly content: unknown
 }
 
-export type MessageListener = (e: DomainEvent) => Promise<void> | void
+export type MessageListener<Event = DomainEvent> = (
+  event: Event,
+) => Promise<void> | void
 export type Unsubscribe = () => void
 
-export interface EventBus {
-  subscribe(listener: MessageListener): Unsubscribe
-  publish(e: DomainEvent): Promise<void>
+export interface EventBus<Event = DomainEvent> {
+  subscribe(listener: MessageListener<Event>): Unsubscribe
+  publish(event: Event): Promise<void>
 }
 
-export class InMemoryEventBus implements EventBus {
-  private listeners: Map<symbol, MessageListener>
-  constructor() {
-    this.listeners = new Map()
-  }
+export class InMemoryEventBus<Event = DomainEvent> implements EventBus<Event> {
+  private readonly listeners = new Map<symbol, MessageListener<Event>>()
 
-  subscribe(listener: MessageListener): Unsubscribe {
-    const token = Symbol('key')
+  subscribe(listener: MessageListener<Event>): Unsubscribe {
+    const token = Symbol('event-listener')
     this.listeners.set(token, listener)
-    return () => this.listeners.delete(token)
+    return () => {
+      this.listeners.delete(token)
+    }
   }
-  async publish(event: DomainEvent): Promise<void> {
-    const promises = [...this.listeners.values()].map((listener) =>
-      listener(event),
+
+  // Snapshot subscriptions, await every listener, and isolate both thrown and rejected failures.
+  async publish(event: Event): Promise<void> {
+    const results = await Promise.allSettled(
+      [...this.listeners.values()].map(async (listener) => listener(event)),
     )
-    await Promise.allSettled(promises)
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        console.error('Event listener failed', result.reason)
+      }
+    }
   }
 }
-
-class DemoEvent implements DomainEvent {
-  constructor(
-    public context: object,
-    public content: string,
-  ) {}
-}
-
-function demo() {
-  const eventBus: EventBus = new InMemoryEventBus()
-
-  const unsubscribe = eventBus.subscribe((event: DomainEvent) => {
-    console.log(event)
-  })
-
-  eventBus.subscribe((event: DomainEvent) => {
-    console.log(event.content + ' listner 2')
-  })
-
-  const event = new DemoEvent({}, 'sujet 1')
-
-  eventBus.publish(event)
-
-  unsubscribe()
-  eventBus.publish(event)
-}
-
-demo()

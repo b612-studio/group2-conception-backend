@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import type { Hono } from 'hono'
 import type { EventCommandController } from '#/controllers/commands/event-controller.ts'
 import type { EventQueryController } from '#/controllers/queries/event-controller.ts'
 import { httpFailure } from '#/controllers/http-result.ts'
@@ -15,10 +15,10 @@ import {
 } from '#/validation.ts'
 
 export function eventRoutes(
+  routes: Hono,
   commands: EventCommandController,
   queries: EventQueryController,
 ) {
-  const routes = new Hono()
   routes.get('/events', async (c) => {
     const input = parse(eventFilterSchema, c.req.query())
     if (Result.isFailure(input)) {

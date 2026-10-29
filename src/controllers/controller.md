@@ -37,6 +37,6 @@ transport could call the same application operation without going through Hono.
 Do not move transactions here either. Their scope must include the repository's
 read, domain check and write.
 
-The controller factory receives [services](../application/services.ts) instead
-of constructing them. This is [dependency injection](../application/dependency-injection.md)
+The controller factory receives explicit use cases and the identity helper from
+[the composition root](../composition-root.ts) instead of constructing them. This is [dependency injection](../application/dependency-injection.md)
 at the HTTP boundary.

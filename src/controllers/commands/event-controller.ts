@@ -1,5 +1,9 @@
 import type { Context } from 'hono'
-import type { Services } from '#/application/services.ts'
+import type { DemoIdentity } from '#/application/demo-identity.ts'
+import type { CreateEventUseCase } from '#/application/commands/create-event.ts'
+import type { UpdateEventUseCase } from '#/application/commands/update-event.ts'
+import type { ReserveEventUseCase } from '#/application/commands/reserve-event.ts'
+import type { CancelReservationUseCase } from '#/application/commands/cancel-reservation.ts'
 import type { EventInput } from '#/domain/event.ts'
 import type { EventId, ReservationId } from '#/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'
@@ -22,7 +26,13 @@ export function createEventCommandController({
   update,
   reserve,
   cancel,
-}: Pick<Services, 'identity' | 'create' | 'update' | 'reserve' | 'cancel'>) {
+}: {
+  identity: DemoIdentity
+  create: CreateEventUseCase
+  update: UpdateEventUseCase
+  reserve: ReserveEventUseCase
+  cancel: CancelReservationUseCase
+}) {
   const currentUser = (context: Context) =>
     requestUser(identity, Option.fromNullable(context.req.header('X-User-Id')))
   return {

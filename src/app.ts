@@ -1,23 +1,20 @@
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
-import { createEventCommandController } from '#/controllers/commands/event-controller.ts'
-import { createEventQueryController } from '#/controllers/queries/event-controller.ts'
-import { createUserQueryController } from '#/controllers/queries/user-controller.ts'
+import type { EventCommandController } from '#/controllers/commands/event-controller.ts'
+import type { EventQueryController } from '#/controllers/queries/event-controller.ts'
+import type { UserQueryController } from '#/controllers/queries/user-controller.ts'
 import { userRoutes } from '#/routes/user-routes.ts'
-import type { Services } from '#/application/services.ts'
 import { eventRoutes } from '#/routes/event-routes.ts'
 import { presentError } from '#/presentation/event-presenter.ts'
 
-export function createApp(services: Services) {
+export function createApp(
+  commands: EventCommandController,
+  queries: EventQueryController,
+  users: UserQueryController,
+) {
   const app = new Hono()
-  app.route(
-    '/',
-    eventRoutes(
-      createEventCommandController(services),
-      createEventQueryController(services),
-    ),
-  )
-  app.route('/', userRoutes(createUserQueryController(services)))
+  eventRoutes(app, commands, queries)
+  userRoutes(app, users)
   app.notFound((c) => c.json(presentError('NOT_FOUND', 'Route not found'), 404))
   app.onError((error, c) => {
     if (error instanceof HTTPException) {

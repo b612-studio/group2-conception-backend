@@ -1,7 +1,7 @@
 import { Event, type EventInput } from '#/domain/event.ts'
 import type { CommandHandler } from '#/shared-kernel/command-handler.ts'
 import type { ApplicationError } from '#/application/ports.ts'
-import type { EventId, VenueId } from '#/domain/ids.ts'
+import type { EventId } from '#/domain/ids.ts'
 import { InvalidInput } from '#/domain/errors.ts'
 import { Result } from '#/shared-kernel/result.ts'
 import type {
@@ -9,25 +9,8 @@ import type {
   EventRepository,
   IdGenerator,
 } from '#/application/ports.ts'
-import { DomainEvent, EventBus } from '#/shared-kernel/event-bus'
-
-class EventCreated implements DomainEvent {
-  constructor(
-    public context: {
-      createdAt: Date
-      pulishedAt: Date
-      version: string
-    },
-    public content: {
-      eventId: string
-      title: string
-      category: string
-      startsAt: Date
-      capacity: number
-      venueId: string
-    },
-  ) {}
-}
+import type { EventBus } from '#/shared-kernel/event-bus.ts'
+import { domainEvent, type ApplicationEvent } from '#/domain/domain-events.ts'
 
 export class CreateEventUseCase implements CommandHandler<
   EventInput,
@@ -37,7 +20,7 @@ export class CreateEventUseCase implements CommandHandler<
     private readonly repository: EventRepository,
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
-    private readonly eventBus: EventBus,
+    private readonly eventBus: EventBus<ApplicationEvent>,
   ) {}
 
   async execute(input: EventInput) {
@@ -52,20 +35,20 @@ export class CreateEventUseCase implements CommandHandler<
     const persisted = await this.repository.createEvent(result.value)
     if (Result.isSuccess(persisted)) {
       const success = persisted.value.data
-      const publishedEvent = new EventCreated(
-        {
-          createdAt: now,
-          pulishedAt: this.clock.now(),
-          version: 'v1',
-        },
-        {
-          ...success,
-          eventId: success.id.toString(),
-          capacity: success.capacity.value,
-          venueId: success.venueId.toString(),
-        },
+      await this.eventBus.publish(
+        domainEvent(
+          'EventCreated',
+          {
+            eventId: success.id,
+            title: success.title,
+            category: success.category,
+            startsAt: success.startsAt,
+            capacity: success.capacity.value,
+            venueId: success.venueId,
+          },
+          now,
+        ),
       )
-      this.eventBus.publish(publishedEvent)
     }
     return persisted
   }
