@@ -1,8 +1,13 @@
 import { expect, test } from 'bun:test'
-import { Event } from '#/domain/event.ts'
-import { Reservation } from '#/domain/reservation.ts'
-import { EventId, VenueId, UserId, ReservationId } from '#/domain/ids.ts'
-import { Conflict, InvalidInput } from '#/domain/errors.ts'
+import { Event } from '#/features/events/domain/event.ts'
+import { Reservation } from '#/features/events/domain/reservation.ts'
+import {
+  EventId,
+  VenueId,
+  UserId,
+  ReservationId,
+} from '#/features/events/domain/ids.ts'
+import { Conflict, InvalidInput } from '#/features/events/domain/errors.ts'
 import { Option } from '#/shared-kernel/option.ts'
 import { Result } from '#/shared-kernel/result.ts'
 import { given } from './support/given.ts'

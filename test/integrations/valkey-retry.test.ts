@@ -3,7 +3,7 @@ import {
   functionalRetryPolicy,
   retry,
   withTimeout,
-} from '#/infrastructure/repository/valkey-event-repository-functional.ts'
+} from '#/features/events/infrastructure/repository/valkey-event-repository-functional.ts'
 import { Option } from '#/shared-kernel/option.ts'
 
 const signal = () => new AbortController().signal

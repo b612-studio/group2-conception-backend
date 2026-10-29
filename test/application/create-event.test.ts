@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { InvalidInput } from '#/domain/errors.ts'
-import { EventId, VenueId } from '#/domain/ids.ts'
+import { InvalidInput } from '#/features/events/domain/errors.ts'
+import { EventId, VenueId } from '#/features/events/domain/ids.ts'
 import { Result } from '#/shared-kernel/result.ts'
 import { anApplication } from '../support/application-fixture.ts'
 import { given } from '../support/given.ts'

@@ -24,7 +24,7 @@ This example follows [the update tests](application/update-event.test.ts):
 
 ```ts
 import { expect, test } from 'bun:test'
-import { Conflict } from '#/domain/errors.ts'
+import { Conflict } from '#/features/events/domain/errors.ts'
 import { Result } from '#/shared-kernel/result.ts'
 import { anEventWithReservation } from './support/application-fixture.ts'
 import { given } from './support/given.ts'
@@ -140,7 +140,7 @@ Assertions can check several facts when they describe one behavior, such as a
 failed update returning a conflict and leaving storage unchanged.
 
 Fixtures use an injected clock and controlled dependencies so boundary scenarios
-do not depend on the real date. See [dependency injection](../src/application/dependency-injection.md)
+do not depend on the real date. See [dependency injection](../src/features/events/application/dependency-injection.md)
 for the application wiring that makes this possible.
 
 Use plain tests when the chain adds no clarity. The

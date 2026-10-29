@@ -1,29 +1,33 @@
 import { Container } from '#/infrastructure/di/container.ts'
 import { TOKEN } from '#/infrastructure/di/tokens.ts'
 import { createApp } from '#/app.ts'
-import { CreateEventUseCase } from '#/application/commands/create-event.ts'
-import { UpdateEventUseCase } from '#/application/commands/update-event.ts'
-import { ReserveEventUseCase } from '#/application/commands/reserve-event.ts'
-import { CancelReservationUseCase } from '#/application/commands/cancel-reservation.ts'
-import { ListEventsUseCase } from '#/application/queries/list-events.ts'
-import { GetEventUseCase } from '#/application/queries/get-event.ts'
-import { ListReservationsUseCase } from '#/application/queries/list-reservations.ts'
-import { DemoIdentity } from '#/application/demo-identity.ts'
+import { CreateEventUseCase } from '#/features/events/application/commands/create-event.ts'
+import { UpdateEventUseCase } from '#/features/events/application/commands/update-event.ts'
+import { ReserveEventUseCase } from '#/features/events/application/commands/reserve-event.ts'
+import { CancelReservationUseCase } from '#/features/events/application/commands/cancel-reservation.ts'
+import { ListEventsUseCase } from '#/features/events/application/queries/list-events.ts'
+import { GetEventUseCase } from '#/features/events/application/queries/get-event.ts'
+import { ListReservationsUseCase } from '#/features/events/application/queries/list-reservations.ts'
+import { DemoIdentity } from '#/features/events/application/demo-identity.ts'
 import type {
   Clock,
   EventRepository,
   IdGenerator,
-} from '#/application/ports.ts'
-import { createEventCommandController } from '#/controllers/commands/event-controller.ts'
-import { createEventQueryController } from '#/controllers/queries/event-controller.ts'
-import { createUserQueryController } from '#/controllers/queries/user-controller.ts'
-import { makeId } from '#/domain/ids.ts'
-import type { DomainEvent } from '#/domain/domain-events.ts'
+} from '#/features/events/application/ports.ts'
+import { createEventCommandController } from '#/features/events/controllers/commands/event-controller.ts'
+import { createEventQueryController } from '#/features/events/controllers/queries/event-controller.ts'
+import { createUserQueryController } from '#/features/events/controllers/queries/user-controller.ts'
+import { makeId } from '#/features/events/domain/ids.ts'
+import type { DomainEvent } from '#/features/events/contracts/events.ts'
 import type { EventEnvelope } from '#/shared-kernel/event-envelope.ts'
+import { NotificationService } from '#/features/notifications/application/notification-service.ts'
+import type { NotificationRepository } from '#/features/notifications/application/ports.ts'
 import {
-  MockNotificationService,
+  eventsSubscriber,
   type NotificationLogger,
-} from '#/infrastructure/notifications/mock-notification-service.ts'
+} from '#/features/notifications/infrastructure/events-subscriber.ts'
+import { InMemoryNotificationRepository } from '#/features/notifications/infrastructure/in-memory-notification-repository.ts'
+import { notificationRoutes } from '#/features/notifications/routes/notification-routes.ts'
 import type { EventBus } from '#/shared-kernel/event-bus.ts'
 import { InMemoryEventBus } from '#/infrastructure/messaging/in-memory-event-bus.ts'
 
@@ -33,6 +37,7 @@ export interface ContainerOptions {
   ids?: IdGenerator
   eventBus?: EventBus<EventEnvelope<DomainEvent>>
   notificationLogger?: NotificationLogger
+  notificationRepository?: NotificationRepository
 }
 
 // Only the composition root resolves tokens. Application code receives ordinary dependencies.
@@ -48,14 +53,29 @@ export function createContainer(options: ContainerOptions): Container {
         options.eventBus ?? new InMemoryEventBus<EventEnvelope<DomainEvent>>(),
     )
     .singleton(
+      TOKEN.NotificationRepository,
+      () =>
+        options.notificationRepository ?? new InMemoryNotificationRepository(),
+    )
+    .singleton(
       TOKEN.NotificationService,
-      () => new MockNotificationService(options.notificationLogger ?? console),
+      (c) =>
+        new NotificationService(
+          c.resolve(TOKEN.NotificationRepository),
+          () => c.resolve(TOKEN.IdGenerator).next<string>(),
+          () => c.resolve(TOKEN.Clock).now(),
+        ),
     )
     .singleton(TOKEN.NotificationSubscription, (c) => {
       const notifications = c.resolve(TOKEN.NotificationService)
       return c
         .resolve(TOKEN.EventBus)
-        .subscribe((event) => notifications.notify(event))
+        .subscribe(
+          eventsSubscriber(
+            notifications,
+            options.notificationLogger ?? console,
+          ),
+        )
     })
     .singleton(
       TOKEN.Identity,
@@ -134,13 +154,15 @@ export function createContainer(options: ContainerOptions): Container {
         reservationsFor: c.resolve(TOKEN.ListReservationsUseCase),
       }),
     )
-    .singleton(TOKEN.App, (c) =>
-      createApp(
+    .singleton(TOKEN.App, (c) => {
+      const app = createApp(
         c.resolve(TOKEN.EventCommandController),
         c.resolve(TOKEN.EventQueryController),
         c.resolve(TOKEN.UserQueryController),
-      ),
-    )
+      )
+      notificationRoutes(app, c.resolve(TOKEN.NotificationService))
+      return app
+    })
 
   // Subscribe once even when callers resolve a use case without resolving the HTTP app.
   container.resolve(TOKEN.NotificationSubscription)

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { Unauthorized } from '#/domain/errors.ts'
-import { UserId } from '#/domain/ids.ts'
+import { Unauthorized } from '#/features/events/domain/errors.ts'
+import { UserId } from '#/features/events/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'
 import { Result } from '#/shared-kernel/result.ts'
 import { anApplication } from '../support/application-fixture.ts'

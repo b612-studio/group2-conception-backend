@@ -1,10 +1,13 @@
 import { expect, test } from 'bun:test'
-import { Capacity } from '#/domain/capacity.ts'
-import { Event } from '#/domain/event.ts'
-import { InvalidInput } from '#/domain/errors.ts'
-import { EventId, VenueId } from '#/domain/ids.ts'
-import { eventToDomain, eventToEntity } from '#/infrastructure/event-entity.ts'
-import { presentEvent } from '#/presentation/event-presenter.ts'
+import { Capacity } from '#/features/events/domain/capacity.ts'
+import { Event } from '#/features/events/domain/event.ts'
+import { InvalidInput } from '#/features/events/domain/errors.ts'
+import { EventId, VenueId } from '#/features/events/domain/ids.ts'
+import {
+  eventToDomain,
+  eventToEntity,
+} from '#/features/events/infrastructure/event-entity.ts'
+import { presentEvent } from '#/features/events/presentation/event-presenter.ts'
 import { Result } from '#/shared-kernel/result.ts'
 
 const invalidCapacities = [0, -1, 1.5, 2147483648, NaN, Infinity, -Infinity]

@@ -6,11 +6,26 @@ import {
   expect,
   test,
 } from 'bun:test'
-import type { EventRepository } from '#/application/ports.ts'
-import { Event, type EventCreationData } from '#/domain/event.ts'
-import { Reservation, type ReservationData } from '#/domain/reservation.ts'
-import { EventId, ReservationId, UserId, VenueId } from '#/domain/ids.ts'
-import { Conflict, InvalidInput, NotFound } from '#/domain/errors.ts'
+import type { EventRepository } from '#/features/events/application/ports.ts'
+import {
+  Event,
+  type EventCreationData,
+} from '#/features/events/domain/event.ts'
+import {
+  Reservation,
+  type ReservationData,
+} from '#/features/events/domain/reservation.ts'
+import {
+  EventId,
+  ReservationId,
+  UserId,
+  VenueId,
+} from '#/features/events/domain/ids.ts'
+import {
+  Conflict,
+  InvalidInput,
+  NotFound,
+} from '#/features/events/domain/errors.ts'
 import { Option } from '#/shared-kernel/option.ts'
 import { Result } from '#/shared-kernel/result.ts'
 import {

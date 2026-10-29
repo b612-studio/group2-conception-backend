@@ -1,18 +1,18 @@
 import { RedisClient, SQL } from 'bun'
 import { GenericContainer, Wait } from 'testcontainers'
-import type { EventRepository } from '#/application/ports.ts'
-import { UserId, VenueId } from '#/domain/ids.ts'
-import { InMemoryEventRepository } from '#/infrastructure/repository/in-memory-event-repository.ts'
-import { PostgresEventRepository } from '#/infrastructure/repository/postgres-event-repository.ts'
-import { ValkeyEventRepository } from '#/infrastructure/repository/valkey-event-repository.ts'
+import type { EventRepository } from '#/features/events/application/ports.ts'
+import { UserId, VenueId } from '#/features/events/domain/ids.ts'
+import { InMemoryEventRepository } from '#/features/events/infrastructure/repository/in-memory-event-repository.ts'
+import { PostgresEventRepository } from '#/features/events/infrastructure/repository/postgres-event-repository.ts'
+import { ValkeyEventRepository } from '#/features/events/infrastructure/repository/valkey-event-repository.ts'
 import {
   createKyselyDatabase,
   KyselyEventRepository,
-} from '#/infrastructure/repository/kysely-event-repository.ts'
+} from '#/features/events/infrastructure/repository/kysely-event-repository.ts'
 import {
   createDrizzleDatabase,
   DrizzleEventRepository,
-} from '#/infrastructure/repository/drizzle-event-repository.ts'
+} from '#/features/events/infrastructure/repository/drizzle-event-repository.ts'
 
 // The same reference records are provided to every adapter.
 export const alice = UserId.makeUnsafe('01900000-0000-7000-8000-000000000001')
@@ -101,7 +101,7 @@ async function postgres(
       repository: createRepository(sql),
       peer: createRepository(peer),
       async reset() {
-        await sql`TRUNCATE reservations, events`
+        await sql`TRUNCATE events.reservations, events.events`
       },
       close,
     }

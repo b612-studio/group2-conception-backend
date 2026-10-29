@@ -2,14 +2,14 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import * as v from 'valibot'
 import { createContainer } from '#/composition-root.ts'
 import { TOKEN } from '#/infrastructure/di/tokens.ts'
-import { InMemoryEventRepository } from '#/infrastructure/repository/in-memory-event-repository.ts'
-import { UserId, VenueId, EventId } from '#/domain/ids.ts'
+import { InMemoryEventRepository } from '#/features/events/infrastructure/repository/in-memory-event-repository.ts'
+import { UserId, VenueId, EventId } from '#/features/events/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'
 import {
   errorDtoSchema,
   eventDtoSchema,
   reservationDtoSchema,
-} from '#/presentation/dtos.ts'
+} from '#/features/events/presentation/dtos.ts'
 import { given } from './support/given.ts'
 
 const alice = UserId.makeUnsafe('01900000-0000-7000-8000-000000000001')

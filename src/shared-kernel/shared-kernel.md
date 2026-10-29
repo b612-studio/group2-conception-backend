@@ -14,6 +14,13 @@ Application command and query use cases implement these contracts. Here `Result`
 is a generic return type, not necessarily the shared `Result` union. A query can
 return an array, while a command can return a success-or-failure value.
 
+[EventBus](event-bus.ts) defines publication and subscription without choosing a
+transport. [EventEnvelope](event-envelope.ts) adds message identity, time and
+version to a generic event value. Neither names Events or Notifications. The
+concrete [in-memory bus](../infrastructure/messaging/in-memory-event-bus.ts)
+belongs in infrastructure, where its listener and failure policies can change
+without putting those choices in every publisher.
+
 ## Why keep it separate
 
 Putting `Result` in a controller module would force domain code to import from
@@ -26,14 +33,20 @@ the shared kernel must not import handlers, controllers or database clients.
 ## Keep the boundary small
 
 Shared does not mean "anything used twice". Capacity belongs to the event
-[domain](../domain/domain.md), and response DTOs belong to
-[presentation](../presentation/dto-and-presenter.md). Neither belongs here just
+[Events domain](../features/events/domain/domain.md), and Events response DTOs belong to
+[presentation](../features/events/presentation/dto-and-presenter.md). Neither belongs here just
 because several files use it.
 
 In domain-driven design, a shared kernel can also mean a jointly maintained
-subset of models shared by bounded contexts. This lesson has one application
-and uses the name for these common foundational types. It does not demonstrate
-coordination between separate teams or bounded contexts.
+subset of business models shared by bounded contexts. This directory uses the
+name for common technical types instead. Events and Notifications do not share a
+user entity or reservation model. Events owns its published facts in
+[its contract](../features/events/contracts/events.ts), not here.
+
+Sharing `Result` or an envelope is a smaller commitment than sharing a business
+model. A shared `User` would make recipient preferences and booking identity part
+of the same change contract. The [bounded-context guide](../features/bounded-contexts.md)
+explains why this lesson keeps them separate.
 
 See [errors as values](errors-as-values.md) for the conventions around `Result`,
 exceptions and missing records.

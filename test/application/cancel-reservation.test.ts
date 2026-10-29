@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { Conflict, NotFound } from '#/domain/errors.ts'
-import { ReservationId } from '#/domain/ids.ts'
+import { Conflict, NotFound } from '#/features/events/domain/errors.ts'
+import { ReservationId } from '#/features/events/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'
 import { Result } from '#/shared-kernel/result.ts'
 import {

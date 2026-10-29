@@ -1,8 +1,9 @@
 # Day 2: Events REST API
 
-A Hono API for events and reservations. This lesson separates HTTP handling,
-application operations, domain rules and persistence. PostgreSQL is the default
-storage backend, with alternative adapters for comparing persistence approaches.
+A Hono API with two bounded contexts, Events and Notifications. Each context owns
+its application logic, domain model and persistence. Events manages seats and
+reservations. Notifications manages recipients, inbox preferences and read state.
+They communicate through an in-process event bus, not shared repositories.
 
 ## Run locally
 
@@ -50,6 +51,37 @@ No model API key is needed.
 | `GET /me/reservations`                            | `X-User-Id` header                                     | List the current demo user's reservations.                                                  |
 | `POST /reservations/{reservationId}/cancellation` | Reservation ID and `X-User-Id` header                  | Cancel a reservation owned by the current demo user.                                        |
 
+Notifications exposes its own endpoints, also using the demo `X-User-Id` header:
+
+| Endpoint                                       | Input                       | Behavior                                                             |
+| ---------------------------------------------- | --------------------------- | -------------------------------------------------------------------- |
+| `GET /me/notifications`                        | Header                      | List only this recipient's inbox, oldest first.                      |
+| `GET /me/notification-preferences`             | Header                      | Read the current inbox preference.                                   |
+| `PATCH /me/notification-preferences`           | `{ "inboxEnabled": false }` | Opt out of future inbox messages.                                    |
+| `POST /me/notifications/{notificationId}/read` | Header and notification ID  | Mark an owned message read. Repeating preserves its first timestamp. |
+
+These operations return `200`. Unknown or unenrolled recipients receive `401`.
+Another recipient's notification is hidden with `404`.
+
+To demonstrate the context boundary with the seeded event:
+
+```sh
+# Events owns the reservation.
+curl -s http://127.0.0.1:3000/events/01900000-0000-7000-8000-000000000004/reservations \
+  -H 'X-User-Id: 01900000-0000-7000-8000-000000000001' \
+  -H 'Content-Type: application/json' -d '{ "quantity": 1 }'
+
+# Notifications owns the resulting inbox item. Its response is not a reservation DTO.
+curl -s http://127.0.0.1:3000/me/notifications \
+  -H 'X-User-Id: 01900000-0000-7000-8000-000000000001'
+
+# Opt out here, then repeat the reservation request. The booking still succeeds,
+# but Notifications does not add another inbox item.
+curl -s -X PATCH http://127.0.0.1:3000/me/notification-preferences \
+  -H 'X-User-Id: 01900000-0000-7000-8000-000000000001' \
+  -H 'Content-Type: application/json' -d '{ "inboxEnabled": false }'
+```
+
 Event creation and seat reservation return `201`. Other successful operations
 return `200`. Event creation also returns a `Location` header. Lists return arrays,
 sorted by date and ID, without pagination.
@@ -69,10 +101,55 @@ Writes are not idempotent, so do not automatically retry a timed-out reservation
 ## Architecture
 
 ```text
-REST routes -> Controllers -> Application operations -> Repository
-                                       |
-                                  Domain rules
+Events HTTP -> Events application -> Events domain -> events.* tables
+                       |
+                 published facts
+                       |
+                 in-memory event bus
+                       |
+          Notifications translation adapter
+                       |
+Notifications HTTP -> Notifications application -> notifications.* tables
 ```
+
+The top-level feature folders name the business capabilities. This is screaming
+architecture: open `src/features` and you see Events and Notifications rather
+than a list of technical layers. Each feature keeps its own technical layers.
+The [bounded-context guide](src/features/bounded-contexts.md) explains why this
+split also requires separate models and explicit contracts, not just new folders.
+
+Events publishes `EventCreated`, `EventUpdated`, `EventReserved` and
+`ReservationCancelled` through [its contract](src/features/events/contracts/events.ts).
+Notifications' [subscriber](src/features/notifications/infrastructure/events-subscriber.ts)
+translates reservation facts into local `BookingNotice` inputs. Creation and update
+facts are logged but do not produce inbox items. No subscriber loads an Events
+entity or calls its repository.
+
+The same person has different models in the two contexts:
+
+| Events                                                  | Notifications                                                 |
+| ------------------------------------------------------- | ------------------------------------------------------------- |
+| `UserId`, name, email, reservations                     | Recipient ID, opaque booking-user reference, inbox preference |
+| Reservation with quantity, event and cancellation state | Notification with subject, body and read timestamp            |
+| Capacity and booking ownership rules                    | Opt-out, duplicate suppression and inbox ownership rules      |
+
+Recipients have their own IDs. Alice's recipient ID ends in `0101`, while her
+booking user ID ends in `0001`. The reference connects identities, not database
+models. It is text, has no cross-context foreign key and cannot be used to join
+through a Notifications repository. Notifications needs neither a user's name
+nor their email for this in-app inbox. Recipients are enrolled separately by demo
+seed data. Unknown recipients are ignored, not fetched from Events.
+
+Notification delivery records a source message ID atomically with an inbox item.
+Replaying a message cannot duplicate the item. Opted-out messages are recorded as
+processed too, so replay after opting back in does not resurrect old messages.
+Marking an item read preserves the first read timestamp and is scoped to its owner.
+
+The bus awaits subscribers and isolates their failures, but it is not durable.
+Booking commits before publication. A process crash or failed subscriber can lose
+a notification. This lesson does not claim reliable delivery or exactly-once
+processing. An outbox, durable broker and retry/dead-letter policy are the next
+steps for production.
 
 - Routes define endpoints and validate incoming requests.
 - Controllers translate HTTP requests into application calls and format responses.
@@ -85,21 +162,36 @@ REST routes -> Controllers -> Application operations -> Repository
 
 ```text
 src/
-  bootstrap.ts          Composition root and local HTTP server
+  bootstrap.ts          Local HTTP server and adapter selection
+  composition-root.ts   Wiring and event subscription
   app.ts                Hono application setup
-  routes/               REST routes and request validation
-  controllers/          HTTP translation and application calls
-  application/          Handlers, reads, identity and repository interface
-  domain/               Event and reservation rules; UUID-v7 identifiers
-  shared-kernel/        Shared types without framework dependencies
-  infrastructure/       Query schemas, entity mappings and database helper
-    repository/         Persistence adapters
-  presentation/         DTO schemas and domain-to-DTO presenters
-  validation.ts         Request schemas and branded ID conversion
-sql/init.sql            PostgreSQL schema and seed data
+  features/
+    events/
+      contracts/        Published event facts, no domain-entity imports
+      application/      Booking commands, queries, identity and ports
+      domain/           Event, reservation, capacity and branded identifiers
+      infrastructure/   Events persistence adapters and row mappings
+      controllers/      Events HTTP translation
+      routes/           Events and reservation endpoints
+      presentation/     Events response DTOs and presenters
+      validation.ts     Events request schemas
+      request.ts        Events request parsing and demo identity
+    notifications/
+      application/      Inbox, preferences, read state and repository port
+      domain/           Recipient, notification and booking-notice models
+      infrastructure/   Event translation and notification repositories
+      routes/           Notifications HTTP boundary and input validation
+  shared-kernel/        Result, Option, handler and messaging abstractions
+  infrastructure/
+    di/                 Generic container and composition tokens
+    messaging/          In-process event bus
+    http/               Shared HttpStatusCode enum
+sql/init.sql            Both PostgreSQL schemas and independent seed data
+sql/migrate-bounded-contexts.sql  Moves existing public tables to events
 ```
 
-The domain and application layers do not depend on Hono or Valibot. The HTTP layer
+The domain and application layers do not depend on Hono or Valibot.
+`test/bounded-contexts.test.ts` guards the cross-context import rule. The HTTP layer
 uses Valibot to validate requests and responses. Imports use the `#/*` alias defined
 in `package.json` and `tsconfig.json`.
 
@@ -107,20 +199,23 @@ in `package.json` and `tsconfig.json`.
 
 These guides explain the patterns through this lesson's implementation:
 
-- [Domain](src/domain/domain.md): business rules and application coordination.
-- [Domain entities](src/domain/entities.md): identity across updates and cancellation.
-- [Value objects](src/domain/value-objects.md): capacity validation and value equality.
-- [Branded types](src/domain/branded-types.md): distinct identifier types and runtime validation.
-- [Repository pattern](src/infrastructure/repository/repository-pattern.md): storage contracts and protected mutations.
-- [Database entities](src/infrastructure/entities.md): rows versus domain entities and their mappings.
+- [Domain](src/features/events/domain/domain.md): business rules and application coordination.
+- [Domain entities](src/features/events/domain/entities.md): identity across updates and cancellation.
+- [Value objects](src/features/events/domain/value-objects.md): capacity validation and value equality.
+- [Branded types](src/features/events/domain/branded-types.md): distinct identifier types and runtime validation.
+- [Repository pattern](src/features/events/infrastructure/repository/repository-pattern.md): storage contracts and protected mutations.
+- [Database entities](src/features/events/infrastructure/entities.md): rows versus domain entities and their mappings.
 - [Errors as values](src/shared-kernel/errors-as-values.md): expected failures, absence and exceptions.
 - [Shared kernel](src/shared-kernel/shared-kernel.md): common types and dependency boundaries.
-- [DTOs and presenters](src/presentation/dto-and-presenter.md): public JSON versus internal representations.
-- [Controllers](src/controllers/controller.md): HTTP translation without business or persistence rules.
-- [Services and dependency injection](src/application/dependency-injection.md): constructor dependencies and startup wiring.
+- [DTOs and presenters](src/features/events/presentation/dto-and-presenter.md): public JSON versus internal representations.
+- [Controllers](src/features/events/controllers/controller.md): HTTP translation without business or persistence rules.
+- [Application services](src/features/notifications/application/application-service.md): orchestration, domain behavior, controllers and transaction boundaries, using Notifications and Events as examples.
+- [Services and dependency injection](src/features/events/application/dependency-injection.md): explicit dependencies, tokens, lifetimes and composition-root ownership.
+- [Events and the in-memory bus](src/infrastructure/messaging/event-bus.md): facts versus commands, publication after commit and delivery failures.
+- [Bounded contexts and feature folders](src/features/bounded-contexts.md): model ownership, contract translation and schema boundaries.
 - [BDD and fluent test APIs](test/bdd.md): behavior-focused scenarios, given/when/then and method chaining.
-- [Functions as values and execution policies](src/infrastructure/repository/functional-composition.md): higher-order functions, predicates and retry composition.
-- [AbortController and deadlines](src/infrastructure/repository/abort-controller.md): cooperative cancellation, timeout cleanup and uncertain write outcomes.
+- [Functions as values and execution policies](src/features/events/infrastructure/repository/functional-composition.md): higher-order functions, predicates and retry composition.
+- [AbortController and deadlines](src/features/events/infrastructure/repository/abort-controller.md): cooperative cancellation, timeout cleanup and uncertain write outcomes.
 
 ### Persistence adapters
 
@@ -165,7 +260,11 @@ backend.
 
 ## Database structure
 
-`sql/init.sql` creates four PostgreSQL tables:
+One PostgreSQL database contains two schemas. The three Events PostgreSQL adapters
+all query `events.*`. Notifications always uses PostgreSQL, including when Events
+uses Valkey. Switching the Events backend does not move or reset the inbox.
+
+`sql/init.sql` creates four tables in the `events` schema:
 
 | Table          | Columns and role                                                                                                           |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -178,7 +277,13 @@ backend.
 venues 1 ---- * events 1 ---- * reservations * ---- 1 users
 ```
 
-All IDs are UUIDs. The domain requires lowercase UUID v7 identifiers. Foreign keys
+Notifications owns `notifications.recipients`, `notifications.inbox` and
+`notifications.processed_messages`. Only context-local foreign keys exist.
+`booking_user_ref` and `booking_ref` are opaque text references to external facts,
+not foreign keys to Events. Schema separation expresses ownership, not database
+permission isolation: this local demo uses one PostgreSQL role for both contexts.
+
+All primary IDs are UUIDs. The domain requires lowercase UUID v7 identifiers. Foreign keys
 connect events to venues and reservations to events and users. SQL constraints
 require non-empty event titles and categories, positive capacity and positive
 reservation quantities.
@@ -205,8 +310,20 @@ To apply it manually to the current database:
 docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U events -d events < sql/init.sql
 ```
 
-Existing rows are kept. Rerunning this file does not reset edited records or migrate
-an older schema.
+Existing rows are kept. Rerunning this file does not reset edited records.
+
+If your database already contains this lesson's tables in `public`, migrate them
+**before** running `init.sql`. Back up the database first:
+
+```sh
+docker compose exec -T postgres pg_dump -U events -d events > /tmp/events-before-contexts.sql
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U events -d events < sql/migrate-bounded-contexts.sql
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U events -d events < sql/init.sql
+```
+
+The migration moves tables with their data and foreign keys. It aborts rather than
+merging if both schemas already contain the same table. Notifications seed data
+is independent; rerunning `init.sql` does not overwrite existing preferences.
 
 ### Inspect the database
 
@@ -232,8 +349,9 @@ docker compose exec -T postgres pg_dump -U events -d events > /tmp/events-before
 docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U events -d events < sql/migrate-uuid-v7.sql
 ```
 
-The migration updates identifiers and foreign keys in one transaction and prints
-the old-to-new mapping. It preserves existing UUID-v7 records.
+Run the UUID migration on the old `public` tables before the bounded-context
+migration above. It updates identifiers and foreign keys in one transaction and
+prints the old-to-new mapping. It preserves existing UUID-v7 records.
 
 For disposable lesson data, you can reset the volumes instead. **This deletes all
 local PostgreSQL and Valkey records.**
@@ -251,5 +369,7 @@ bun run test
 ```
 
 `check` verifies formatting, lint rules and TypeScript types. The test suite covers
-application operations, REST endpoints and repository contracts. Repository tests
+application operations, REST endpoints, context import boundaries and repository
+contracts. Notification repository tests cover both memory and PostgreSQL,
+including concurrent replay, preferences and owner-scoped read state. Repository tests
 require Docker and use disposable containers, not the demo database.

@@ -1,10 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import * as v from 'valibot'
-import { InvalidInput } from '#/domain/errors.ts'
-import { UserId } from '#/domain/ids.ts'
+import { InvalidInput } from '#/features/events/domain/errors.ts'
+import { UserId } from '#/features/events/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'
 import { Result } from '#/shared-kernel/result.ts'
-import { parse, parseOption, userIdSchema } from '#/validation.ts'
+import {
+  parse,
+  parseOption,
+  userIdSchema,
+} from '#/features/events/validation.ts'
 
 describe('parseOption', () => {
   test('preserves None without running the schema', () => {

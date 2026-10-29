@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { NotFound } from '#/domain/errors.ts'
-import { EventId } from '#/domain/ids.ts'
+import { NotFound } from '#/features/events/domain/errors.ts'
+import { EventId } from '#/features/events/domain/ids.ts'
 import { Result } from '#/shared-kernel/result.ts'
 import {
   anApplication,
