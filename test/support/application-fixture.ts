@@ -1,10 +1,10 @@
 import { createContainer } from '#/composition-root.ts'
 import { TOKEN } from '#/infrastructure/di/tokens.ts'
-import type { DomainEvent } from '#/domain/domain-events.ts'
+import type { DomainEvent } from '#/features/events/contracts/events.ts'
 import type { EventEnvelope } from '#/shared-kernel/event-envelope.ts'
-import type { EventInput } from '#/domain/event.ts'
-import { UserId, VenueId } from '#/domain/ids.ts'
-import { InMemoryEventRepository } from '#/infrastructure/repository/in-memory-event-repository.ts'
+import type { EventInput } from '#/features/events/domain/event.ts'
+import { UserId, VenueId } from '#/features/events/domain/ids.ts'
+import { InMemoryEventRepository } from '#/features/events/infrastructure/repository/in-memory-event-repository.ts'
 import { Result } from '#/shared-kernel/result.ts'
 
 // Each scenario owns its repository and clock. No HTTP app or external storage.

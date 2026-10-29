@@ -1,5 +1,38 @@
 BEGIN;
 
+CREATE SCHEMA IF NOT EXISTS events;
+CREATE SCHEMA IF NOT EXISTS notifications;
+SET LOCAL search_path TO events;
+
+-- Context-local foreign keys only. No reference to events.users.
+CREATE TABLE IF NOT EXISTS notifications.recipients (
+  id uuid PRIMARY KEY,
+  booking_user_ref text NOT NULL UNIQUE,
+  inbox_enabled boolean NOT NULL DEFAULT true
+);
+CREATE TABLE IF NOT EXISTS notifications.processed_messages (
+  recipient_id uuid NOT NULL REFERENCES notifications.recipients(id),
+  message_id uuid NOT NULL,
+  PRIMARY KEY (recipient_id, message_id)
+);
+CREATE TABLE IF NOT EXISTS notifications.inbox (
+  id uuid PRIMARY KEY,
+  recipient_id uuid NOT NULL REFERENCES notifications.recipients(id),
+  source_message_id uuid NOT NULL,
+  booking_ref text NOT NULL,
+  subject text NOT NULL,
+  body text NOT NULL,
+  created_at timestamptz NOT NULL,
+  read_at timestamptz,
+  UNIQUE (recipient_id, source_message_id)
+);
+CREATE INDEX IF NOT EXISTS inbox_recipient_created_idx ON notifications.inbox(recipient_id, created_at, id);
+
+INSERT INTO notifications.recipients (id, booking_user_ref) VALUES
+  ('01900000-0000-7000-8000-000000000101', '01900000-0000-7000-8000-000000000001'),
+  ('01900000-0000-7000-8000-000000000102', '01900000-0000-7000-8000-000000000002')
+ON CONFLICT DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS users (
   id uuid PRIMARY KEY,
   name text NOT NULL,

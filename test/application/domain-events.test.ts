@@ -3,7 +3,7 @@ import {
   anApplication,
   anExistingEvent,
 } from '../support/application-fixture.ts'
-import { EventId, ReservationId } from '#/domain/ids.ts'
+import { EventId, ReservationId } from '#/features/events/domain/ids.ts'
 import { TOKEN } from '#/infrastructure/di/tokens.ts'
 import { Result } from '#/shared-kernel/result.ts'
 
@@ -119,7 +119,11 @@ test('publication follows persistence and awaits asynchronous subscribers', asyn
     }
     await Promise.resolve()
     expect(
-      (await app.repository.findEvent(envelope.event.content.eventId))._tag,
+      (
+        await app.repository.findEvent(
+          EventId.makeUnsafe(envelope.event.content.eventId),
+        )
+      )._tag,
     ).toBe('Some')
     observed = true
   })

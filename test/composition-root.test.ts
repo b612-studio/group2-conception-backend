@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { anApplication } from './support/application-fixture.ts'
 import { TOKEN } from '#/infrastructure/di/tokens.ts'
 import { createContainer } from '#/composition-root.ts'
-import type { DomainEvent } from '#/domain/domain-events.ts'
+import type { DomainEvent } from '#/features/events/contracts/events.ts'
 import type { EventEnvelope } from '#/shared-kernel/event-envelope.ts'
 
 test('one app per container and independent apps do not share repositories or buses', async () => {

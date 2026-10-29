@@ -7,7 +7,7 @@ to interrupt control flow with a thrown exception.
 The `_tag` field tells TypeScript which branch is present. A success has `value`;
 a failure has `error`.
 
-For example, [Capacity.create](../domain/capacity.ts) returns
+For example, [Capacity.create](../features/events/domain/capacity.ts) returns
 `Result<Capacity, InvalidInput>`. Zero seats produces a failure value. The caller
 must inspect that result before using the capacity.
 
@@ -58,7 +58,7 @@ a different error representation, not just to discard useful details.
 
 ### Why the database write wrappers use flatten
 
-[pgWrite](../infrastructure/pg-write.ts) calls `Result.tryPromise` around an
+[pgWrite](../features/events/infrastructure/pg-write.ts) calls `Result.tryPromise` around an
 operation that already returns a `Result`. That produces a nested result:
 
 ```ts
@@ -128,12 +128,12 @@ control-flow rewrite is included.
 
 ## Errors do not have to be thrown
 
-[Domain errors](../domain/errors.ts) extend JavaScript's `Error` class, but
+[Domain errors](../features/events/domain/errors.ts) extend JavaScript's `Error` class, but
 `Result.fail(new Conflict('Not enough seats'))` returns an object. It does not
 throw. Extending `Error` and throwing it are separate choices.
 
 Handlers propagate these failures to the controller. The
-[error presenter](../presentation/application-error.ts) maps conflicts to HTTP
+[error presenter](../features/events/presentation/application-error.ts) maps conflicts to HTTP
 409, missing records to 404, unauthorized requests to 401 and invalid input to 400. Domain code has no HTTP status codes.
 
 ## Where exceptions remain
