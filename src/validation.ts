@@ -1,5 +1,6 @@
 import * as v from 'valibot'
 import { Result } from '#/shared-kernel/result.ts'
+import { Option } from '#/shared-kernel/option.ts'
 import { InvalidInput } from '#/domain/errors.ts'
 import {
   EventId,
@@ -65,6 +66,16 @@ export const eventFilterSchema = v.strictObject({
 export const reservationSchema = v.strictObject({
   quantity: positiveIntegerSchema,
 })
+
+export function parseOption<T extends v.GenericSchema>(
+  schema: T,
+  input: Option<unknown>,
+): Result<Option<v.InferOutput<T>>, InvalidInput> {
+  if (Option.isNone(input)) {
+    return Result.succeed(Option.none())
+  }
+  return Result.map(parse(schema, input.value), Option.some)
+}
 
 export function parse<T extends v.GenericSchema>(
   schema: T,

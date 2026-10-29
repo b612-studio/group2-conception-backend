@@ -17,9 +17,8 @@ test('creation generates an event ID and persists the supplied data', () =>
         ...eventInput,
         id: event.data.id,
       })
-      expect(await services.read.get.execute(event.data.id)).toEqual(
-        Result.succeed(event),
-      )
+      const candidate = await services.read.get.execute(event.data.id)
+      expect(candidate).toEqual(Result.succeed(event))
     }))
 
 test.each([new Date('2029-12-31T23:59:59Z'), new Date('2030-01-01T00:00:00Z')])(
@@ -33,7 +32,8 @@ test.each([new Date('2029-12-31T23:59:59Z'), new Date('2030-01-01T00:00:00Z')])(
         expect(result).toEqual(
           Result.fail(new InvalidInput('Event must start in the future')),
         )
-        expect(await services.read.list.execute({})).toEqual([])
+        const candidate = await services.read.list.execute({})
+        expect(candidate).toEqual([])
       }),
 )
 
@@ -53,7 +53,8 @@ test.each([
         _tag: 'Failure',
         error: expect.any(InvalidInput),
       })
-      expect(await services.read.list.execute({})).toEqual([])
+      const candidate = await services.read.list.execute({})
+      expect(candidate).toEqual([])
     }),
 )
 
@@ -68,5 +69,6 @@ test('an unknown venue rejects creation without persistence', () =>
           new InvalidInput('Referenced venue or user does not exist'),
         ),
       )
-      expect(await services.read.list.execute({})).toEqual([])
+      const candidate = await services.read.list.execute({})
+      expect(candidate).toEqual([])
     }))

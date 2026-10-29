@@ -32,7 +32,10 @@ import { given } from './support/given.ts'
 test('capacity cannot drop below reserved seats', () =>
   given(anEventWithReservation)
     .when(({ services, event }) =>
-      services.update.execute(event.data.id, { capacity: 1 }),
+      services.update.execute({
+        id: event.data.id,
+        patch: { capacity: 1 },
+      }),
     )
     .then(async (result, { services, event }) => {
       expect(result).toEqual(
@@ -42,15 +45,47 @@ test('capacity cannot drop below reserved seats', () =>
           ),
         ),
       )
-      expect(await services.read.get(event.data.id)).toEqual(
-        Result.succeed(event),
-      )
+      const candidate = await services.read.get.execute(event.data.id)
+      expect(candidate).toEqual(Result.succeed(event))
     }))
 ```
 
 The fixture contains two occupied seats. The scenario checks both the rejection
 and the fact that a failed edit saves nothing. Checking only the error would miss
 an implementation that rejects the request after already changing storage.
+
+## Values, rejections and thrown exceptions
+
+Keep the operation outside `expect` so the action and assertion are separate.
+For a resolved value, await the operation first:
+
+```ts
+const candidate = await services.read.get.execute(event.data.id)
+expect(candidate).toEqual(Result.succeed(event))
+```
+
+A domain `Result.Failure` is also a resolved value. Assert it with `toEqual`,
+not `.rejects`.
+
+For an infrastructure rejection, keep the promise in `candidate` and pass it
+to `.rejects`:
+
+```ts
+const candidate = repository.createEvent(duplicateEvent)
+expect(candidate).rejects.toThrow()
+```
+
+Awaiting `repository.createEvent` first would throw before the assertion runs.
+Bun's built-in rejection matchers inspect the promise without an explicit
+`await`. This convention is specific to Bun, not a rule for other test runners.
+
+For a synchronous exception, keep the operation in a function so the matcher
+can invoke it and inspect the throw:
+
+```ts
+const candidate = () => withTimeout(0, async () => 'done')
+expect(candidate).toThrow('positive and finite')
+```
 
 ## How the helper executes
 

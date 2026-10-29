@@ -1,7 +1,8 @@
 import type { Context } from 'hono'
 import type { ApplicationError } from '#/application/ports.ts'
 import { presentApplicationError } from '#/presentation/application-error.ts'
-import type { Result } from '#/shared-kernel/result.ts'
+import { Result } from '#/shared-kernel/result.ts'
+import { HttpStatusCode } from '#/presentation/http-code.ts';
 
 export function httpFailure(context: Context, error: ApplicationError) {
   const { body, status } = presentApplicationError(error)
@@ -12,9 +13,9 @@ export function httpResult<Value>(
   context: Context,
   result: Result<Value, ApplicationError>,
   present: (value: Value) => object,
-  status: 200 | 201 = 200,
+  status: HttpStatusCode.Created | HttpStatusCode.Ok = HttpStatusCode.Ok,
 ) {
-  if (result._tag === 'Failure') {
+  if (Result.isFailure(result)) {
     return httpFailure(context, result.error)
   }
   return context.json(present(result.value), status)

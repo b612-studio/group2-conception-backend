@@ -18,11 +18,11 @@ export class CreateEventUseCase implements CommandHandler<
     private readonly repository: EventRepository,
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
-  ) {}
+  ) { }
 
   async execute(input: EventInput) {
     const result = Event.create({ ...input, id: this.ids.next<EventId>() })
-    if (result._tag === 'Failure') {
+    if (Result.isFailure(result)) {
       return result
     }
     if (result.value.data.startsAt <= this.clock.now()) {

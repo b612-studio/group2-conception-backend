@@ -4,6 +4,7 @@ import { httpFailure } from '#/controllers/http-result.ts'
 import { presentReservation } from '#/presentation/event-presenter.ts'
 import { requestUser } from '#/request.ts'
 import { Option } from '#/shared-kernel/option.ts'
+import { Result } from '#/shared-kernel/result.ts'
 
 export function createUserQueryController({
   read,
@@ -15,7 +16,7 @@ export function createUserQueryController({
         identity,
         Option.fromNullable(context.req.header('X-User-Id')),
       )
-      if (user._tag === 'Failure') {
+      if (Result.isFailure(user)) {
         return httpFailure(context, user.error)
       }
       const reservations = await read.reservationsFor.execute(user.value)

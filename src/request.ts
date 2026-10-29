@@ -3,22 +3,19 @@ import type { DemoIdentity } from '#/application/demo-identity.ts'
 import type { ApplicationError } from '#/application/ports.ts'
 import type { UserId } from '#/domain/ids.ts'
 import { InvalidInput } from '#/domain/errors.ts'
-import { parse, userIdSchema } from '#/validation.ts'
-import { Option } from '#/shared-kernel/option.ts'
+import { parse, parseOption, userIdSchema } from '#/validation.ts'
+import type { Option } from '#/shared-kernel/option.ts'
 import { Result } from '#/shared-kernel/result.ts'
 
 export async function requestUser(
   identity: DemoIdentity,
   provided: Option<string>,
 ): Promise<Result<UserId, ApplicationError>> {
-  if (Option.isNone(provided)) {
-    return identity.requireUser(Option.none())
-  }
-  const parsed = parse(userIdSchema, provided.value)
-  if (parsed._tag === 'Failure') {
+  const parsed = parseOption(userIdSchema, provided)
+  if (Result.isFailure(parsed)) {
     return parsed
   }
-  return identity.requireUser(Option.some(parsed.value))
+  return identity.requireUser(parsed.value)
 }
 
 export async function requestJson<Schema extends v.GenericSchema>(
@@ -29,7 +26,7 @@ export async function requestJson<Schema extends v.GenericSchema>(
     (): Promise<unknown> => request.json(),
     () => new InvalidInput('Request body must be valid JSON'),
   )
-  if (input._tag === 'Failure') {
+  if (Result.isFailure(input)) {
     return input
   }
   return parse(schema, input.value)

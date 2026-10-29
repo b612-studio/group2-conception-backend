@@ -15,21 +15,59 @@ export const Result = {
     value,
   }),
   fail: <Error>(error: Error): Failure<Error> => ({ _tag: 'Failure', error }),
+  isSuccess: <Current extends Result<unknown, unknown>>(
+    result: Current,
+  ): result is Extract<Current, Success<unknown>> => result._tag === 'Success',
+  isFailure: <Current extends Result<unknown, unknown>>(
+    result: Current,
+  ): result is Extract<Current, Failure<unknown>> => result._tag === 'Failure',
   map: <Value, Error, Next>(
     result: Result<Value, Error>,
     mapper: (value: Value) => Next,
-  ): Result<Next, Error> =>
-    result._tag === 'Success' ? Result.succeed(mapper(result.value)) : result,
+  ): Result<Next, Error> => {
+    if (Result.isFailure(result)) {
+      return result
+    }
+    return Result.succeed(mapper(result.value))
+  },
+  mapError: <Value, Error, NextError>(
+    result: Result<Value, Error>,
+    mapper: (error: Error) => NextError,
+  ): Result<Value, NextError> => {
+    if (Result.isFailure(result)) {
+      return Result.fail(mapper(result.error))
+    }
+    return result
+  },
+  flatMap: <Value, Error, Next, NextError>(
+    result: Result<Value, Error>,
+    mapper: (value: Value) => Result<Next, NextError>,
+  ): Result<Next, Error | NextError> => {
+    if (Result.isFailure(result)) {
+      return result
+    }
+    return mapper(result.value)
+  },
+  flatten: <Value, Error, OuterError>(
+    result: Result<Result<Value, Error>, OuterError>,
+  ): Result<Value, Error | OuterError> => {
+    if (Result.isFailure(result)) {
+      return result
+    }
+    return result.value
+  },
   match: <Value, Error, Next>(
     result: Result<Value, Error>,
     cases: {
       onSuccess: (value: Value) => Next
       onFailure: (error: Error) => Next
     },
-  ): Next =>
-    result._tag === 'Success'
-      ? cases.onSuccess(result.value)
-      : cases.onFailure(result.error),
+  ): Next => {
+    if (Result.isFailure(result)) {
+      return cases.onFailure(result.error)
+    }
+    return cases.onSuccess(result.value)
+  },
   // Adapt rejecting third-party/driver APIs once at their integration boundary.
   tryPromise: async <Value, Failure>(
     task: () => Promise<Value>,
@@ -43,7 +81,7 @@ export const Result = {
   },
   // Unsafe constructors and persistence invariants only; never unwrap expected request failures.
   getOrThrow: <Value, Error>(result: Result<Value, Error>): Value => {
-    if (result._tag === 'Failure') {
+    if (Result.isFailure(result)) {
       throw result.error
     }
     return result.value

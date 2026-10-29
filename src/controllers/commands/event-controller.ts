@@ -3,12 +3,14 @@ import type { Services } from '#/application/services.ts'
 import type { EventInput } from '#/domain/event.ts'
 import type { EventId, ReservationId } from '#/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'
+import { Result } from '#/shared-kernel/result.ts'
 import { requestUser } from '#/request.ts'
 import { httpFailure, httpResult } from '#/controllers/http-result.ts'
 import {
   presentEvent,
   presentReservation,
 } from '#/presentation/event-presenter.ts'
+import { HttpStatusCode } from '#/presentation/http-code.ts';
 
 export function createEventCommandController({
   identity,
@@ -22,28 +24,29 @@ export function createEventCommandController({
   return {
     create: async (context: Context, input: EventInput) => {
       const result = await create.execute(input)
-      if (result._tag === 'Success') {
+      if (Result.isSuccess(result)) {
         context.header('Location', `/events/${result.value.data.id}`)
       }
-      return httpResult(context, result, presentEvent, 201)
+      // FIXME: Wrong status
+      return httpResult(context, result, presentEvent, HttpStatusCode.Created)
     },
     update: async (context: Context, id: EventId, patch: Partial<EventInput>) =>
       httpResult(context, await update.execute({ id, patch }), presentEvent),
     reserve: async (context: Context, eventId: EventId, quantity: number) => {
       const user = await currentUser(context)
-      if (user._tag === 'Failure') {
+      if (Result.isFailure(user)) {
         return httpFailure(context, user.error)
       }
       return httpResult(
         context,
         await reserve.execute({ eventId, userId: user.value, quantity }),
         presentReservation,
-        201,
+        HttpStatusCode.Created,
       )
     },
     cancel: async (context: Context, id: ReservationId) => {
       const user = await currentUser(context)
-      if (user._tag === 'Failure') {
+      if (Result.isFailure(user)) {
         return httpFailure(context, user.error)
       }
       return httpResult(

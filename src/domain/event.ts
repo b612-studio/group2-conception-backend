@@ -29,7 +29,7 @@ export class Event {
       return Result.fail(new InvalidInput('Invalid start date'))
     }
     const capacity = Capacity.create(data.capacity)
-    if (capacity._tag === 'Failure') {
+    if (Result.isFailure(capacity)) {
       return capacity
     }
     return Result.succeed(new Event({ ...data, capacity: capacity.value }))
@@ -45,7 +45,7 @@ export class Event {
       capacity: this.data.capacity.value,
       ...patch,
     })
-    if (result._tag === 'Failure') {
+    if (Result.isFailure(result)) {
       return result
     }
     const updated = result.value

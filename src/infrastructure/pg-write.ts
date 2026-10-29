@@ -22,5 +22,5 @@ export async function pgWrite<Value>(
     }
     throw cause
   })
-  return result._tag === 'Failure' ? result : result.value
+  return Result.flatten(result)
 }

@@ -70,7 +70,7 @@ export class KyselyEventRepository implements EventRepository {
           return Result.fail(new NotFound('Event not found'))
         }
         const updated = change(found.value, await this.reservedSeats(tx, id))
-        if (updated._tag === 'Failure') {
+        if (Result.isFailure(updated)) {
           return updated
         }
         await tx
@@ -100,7 +100,7 @@ export class KyselyEventRepository implements EventRepository {
           found.value,
           await this.reservedSeats(tx, eventId),
         )
-        if (result._tag === 'Failure') {
+        if (Result.isFailure(result)) {
           return result
         }
         const entity = reservationToEntity(result.value)
@@ -144,7 +144,7 @@ export class KyselyEventRepository implements EventRepository {
         return Result.fail(new NotFound('Reservation not found'))
       }
       const updated = change(reservationFromRow(row))
-      if (updated._tag === 'Failure') {
+      if (Result.isFailure(updated)) {
         return updated
       }
       const entity = reservationToEntity(updated.value)

@@ -119,6 +119,8 @@ These guides explain the patterns through this lesson's implementation:
 - [Controllers](src/controllers/controller.md): HTTP translation without business or persistence rules.
 - [Services and dependency injection](src/application/dependency-injection.md): constructor dependencies and startup wiring.
 - [BDD and fluent test APIs](test/bdd.md): behavior-focused scenarios, given/when/then and method chaining.
+- [Functions as values and execution policies](src/infrastructure/repository/functional-composition.md): higher-order functions, predicates and retry composition.
+- [AbortController and deadlines](src/infrastructure/repository/abort-controller.md): cooperative cancellation, timeout cleanup and uncertain write outcomes.
 
 ### Persistence adapters
 

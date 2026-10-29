@@ -20,9 +20,8 @@ test('partial updates preserve the ID and unspecified fields', () =>
     .then(async (result, { services, event }) => {
       const updated = Result.getOrThrow(result)
       expect(updated.data).toEqual({ ...event.data, title: 'New title' })
-      expect(await services.read.get.execute(event.data.id)).toEqual(
-        Result.succeed(updated),
-      )
+      const candidate = await services.read.get.execute(event.data.id)
+      expect(candidate).toEqual(Result.succeed(updated))
     }))
 
 test('updating a missing event returns NotFound', () =>
@@ -53,9 +52,8 @@ test('capacity cannot drop below reserved seats and failed updates persist nothi
           ),
         ),
       )
-      expect(await services.read.get.execute(event.data.id)).toEqual(
-        Result.succeed(event),
-      )
+      const candidate = await services.read.get.execute(event.data.id)
+      expect(candidate).toEqual(Result.succeed(event))
     }))
 
 test('capacity may equal the number of reserved seats', () =>
@@ -76,7 +74,8 @@ test('capacity may equal the number of reserved seats', () =>
     )
     .then(async (result, { services, event }) => {
       expect(Result.getOrThrow(result).data.capacity.value).toBe(2)
-      expect(await services.read.get.execute(event.data.id)).toEqual(result)
+      const candidate = await services.read.get.execute(event.data.id)
+      expect(candidate).toEqual(result)
     }))
 
 test('updates use the current clock and reject an event at its start', () =>
@@ -95,7 +94,8 @@ test('updates use the current clock and reject an event at its start', () =>
       expect(result).toEqual(
         Result.fail(new Conflict('Only future events can be updated')),
       )
-      expect(await services.read.get.execute(event.data.id)).toEqual(
+      const candidate = await services.read.get.execute(event.data.id)
+      expect(candidate).toEqual(
         Result.succeed(event),
       )
     }))
@@ -114,7 +114,8 @@ test('rescheduling an event to the present is rejected', () =>
       expect(result).toEqual(
         Result.fail(new Conflict('Only future events can be updated')),
       )
-      expect(await services.read.get.execute(event.data.id)).toEqual(
+      const eventCandidate = await services.read.get.execute(event.data.id);
+      expect(eventCandidate).toEqual(
         Result.succeed(event),
       )
     }))
@@ -131,7 +132,8 @@ test.each([{ capacity: 0 }, { venueId: VenueId.make() }])(
           _tag: 'Failure',
           error: expect.any(InvalidInput),
         })
-        expect(await services.read.get.execute(event.data.id)).toEqual(
+        const candidate = await services.read.get.execute(event.data.id);
+        expect(candidate).toEqual(
           Result.succeed(event),
         )
       }),
