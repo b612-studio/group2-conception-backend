@@ -1,11 +1,16 @@
 import type { Context } from 'hono'
 import type { ApplicationError } from '#/application/ports.ts'
 import { presentApplicationError } from '#/presentation/application-error.ts'
-import { Result } from '#/shared-kernel/result.ts'
-import { HttpStatusCode } from '#/presentation/http-code.ts';
+import { Failure, Result } from '#/shared-kernel/result.ts'
+import { HttpStatusCode } from '#/presentation/http-code.ts'
 
 export function httpFailure(context: Context, error: ApplicationError) {
   const { body, status } = presentApplicationError(error)
+  return context.json(body, status)
+}
+
+export function httpError(context: Context, error: Failure<ApplicationError>) {
+  const { body, status } = presentApplicationError(error.error)
   return context.json(body, status)
 }
 

@@ -12,9 +12,11 @@ import type {
   EventRepository,
   IdGenerator,
 } from '#/application/ports.ts'
+import { EventBus } from '#/shared-kernel/event-bus.ts'
 
 export function createServices(
   repository: EventRepository,
+  eventBus: EventBus,
   clock: Clock = { now: () => new Date() },
   ids: IdGenerator = { next: makeId },
 ) {
@@ -25,7 +27,7 @@ export function createServices(
       reservationsFor: new ListReservationsUseCase(repository),
     },
     identity: new DemoIdentity(repository),
-    create: new CreateEventUseCase(repository, clock, ids),
+    create: new CreateEventUseCase(repository, clock, ids, eventBus),
     update: new UpdateEventUseCase(repository, clock),
     reserve: new ReserveEventUseCase(repository, clock, ids),
     cancel: new CancelReservationUseCase(repository, clock),

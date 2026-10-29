@@ -25,7 +25,7 @@ const reservationColumns =
   'id, event_id, user_id, quantity, created_at, cancelled_at'
 
 export class PostgresEventRepository implements EventRepository {
-  constructor(private readonly sql: SQL) { }
+  constructor(private readonly sql: SQL) {}
 
   async listEvents(filter: EventFilter) {
     const rows = await this.sql<EventEntity[]>`
