@@ -1,7 +1,7 @@
 import { Event, type EventInput } from '#/domain/event.ts'
 import type { CommandHandler } from '#/shared-kernel/command-handler.ts'
 import type { ApplicationError } from '#/application/ports.ts'
-import type { EventId } from '#/domain/ids.ts'
+import type { EventId, VenueId } from '#/domain/ids.ts'
 import { InvalidInput } from '#/domain/errors.ts'
 import { Result } from '#/shared-kernel/result.ts'
 import type {
@@ -9,6 +9,25 @@ import type {
   EventRepository,
   IdGenerator,
 } from '#/application/ports.ts'
+import { DomainEvent, EventBus } from '#/shared-kernel/event-bus'
+
+class EventCreated implements DomainEvent {
+  constructor(
+    public context: {
+      createdAt: Date
+      pulishedAt: Date
+      version: string
+    },
+    public content: {
+      eventId: string
+      title: string
+      category: string
+      startsAt: Date
+      capacity: number
+      venueId: string
+    },
+  ) {}
+}
 
 export class CreateEventUseCase implements CommandHandler<
   EventInput,
@@ -18,16 +37,36 @@ export class CreateEventUseCase implements CommandHandler<
     private readonly repository: EventRepository,
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
-  ) { }
+    private readonly eventBus: EventBus,
+  ) {}
 
   async execute(input: EventInput) {
     const result = Event.create({ ...input, id: this.ids.next<EventId>() })
+    const now = this.clock.now()
     if (Result.isFailure(result)) {
       return result
     }
-    if (result.value.data.startsAt <= this.clock.now()) {
+    if (result.value.data.startsAt <= now) {
       return Result.fail(new InvalidInput('Event must start in the future'))
     }
-    return this.repository.createEvent(result.value)
+    const persisted = await this.repository.createEvent(result.value)
+    if (Result.isSuccess(persisted)) {
+      const success = persisted.value.data
+      const publishedEvent = new EventCreated(
+        {
+          createdAt: now,
+          pulishedAt: this.clock.now(),
+          version: 'v1',
+        },
+        {
+          ...success,
+          eventId: success.id.toString(),
+          capacity: success.capacity.value,
+          venueId: success.venueId.toString(),
+        },
+      )
+      this.eventBus.publish(publishedEvent)
+    }
+    return persisted
   }
 }

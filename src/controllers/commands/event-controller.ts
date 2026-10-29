@@ -5,12 +5,16 @@ import type { EventId, ReservationId } from '#/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'
 import { Result } from '#/shared-kernel/result.ts'
 import { requestUser } from '#/request.ts'
-import { httpFailure, httpResult } from '#/controllers/http-result.ts'
+import {
+  httpError,
+  httpFailure,
+  httpResult,
+} from '#/controllers/http-result.ts'
 import {
   presentEvent,
   presentReservation,
 } from '#/presentation/event-presenter.ts'
-import { HttpStatusCode } from '#/presentation/http-code.ts';
+import { HttpStatusCode } from '#/presentation/http-code.ts'
 
 export function createEventCommandController({
   identity,
@@ -26,8 +30,9 @@ export function createEventCommandController({
       const result = await create.execute(input)
       if (Result.isSuccess(result)) {
         context.header('Location', `/events/${result.value.data.id}`)
+      } else {
+        return httpError(context, result)
       }
-      // FIXME: Wrong status
       return httpResult(context, result, presentEvent, HttpStatusCode.Created)
     },
     update: async (context: Context, id: EventId, patch: Partial<EventInput>) =>

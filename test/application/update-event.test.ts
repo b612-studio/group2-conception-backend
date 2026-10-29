@@ -95,9 +95,7 @@ test('updates use the current clock and reject an event at its start', () =>
         Result.fail(new Conflict('Only future events can be updated')),
       )
       const candidate = await services.read.get.execute(event.data.id)
-      expect(candidate).toEqual(
-        Result.succeed(event),
-      )
+      expect(candidate).toEqual(Result.succeed(event))
     }))
 
 test('rescheduling an event to the present is rejected', () =>
@@ -114,10 +112,8 @@ test('rescheduling an event to the present is rejected', () =>
       expect(result).toEqual(
         Result.fail(new Conflict('Only future events can be updated')),
       )
-      const eventCandidate = await services.read.get.execute(event.data.id);
-      expect(eventCandidate).toEqual(
-        Result.succeed(event),
-      )
+      const eventCandidate = await services.read.get.execute(event.data.id)
+      expect(eventCandidate).toEqual(Result.succeed(event))
     }))
 
 test.each([{ capacity: 0 }, { venueId: VenueId.make() }])(
@@ -132,9 +128,7 @@ test.each([{ capacity: 0 }, { venueId: VenueId.make() }])(
           _tag: 'Failure',
           error: expect.any(InvalidInput),
         })
-        const candidate = await services.read.get.execute(event.data.id);
-        expect(candidate).toEqual(
-          Result.succeed(event),
-        )
+        const candidate = await services.read.get.execute(event.data.id)
+        expect(candidate).toEqual(Result.succeed(event))
       }),
 )

@@ -26,7 +26,7 @@ export function createKyselyDatabase(url: string) {
 }
 
 export class KyselyEventRepository implements EventRepository {
-  constructor(private readonly db: Kysely<Database>) { }
+  constructor(private readonly db: Kysely<Database>) {}
 
   async listEvents(filter: EventFilter) {
     let query = this.db.selectFrom('events').selectAll()

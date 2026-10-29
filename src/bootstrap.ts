@@ -13,6 +13,7 @@ import {
   createDrizzleDatabase,
   DrizzleEventRepository,
 } from '#/infrastructure/repository/drizzle-event-repository.ts'
+import { InMemoryEventBus } from './shared-kernel/event-bus'
 
 const backend = process.env.EVENT_REPOSITORY ?? 'postgres'
 if (
@@ -72,7 +73,8 @@ function createPersistence(
 }
 
 const persistence = createPersistence(backend)
-const services = createServices(persistence.repository)
+const eventBus = new InMemoryEventBus()
+const services = createServices(persistence.repository, eventBus)
 const port = Number(process.env.PORT ?? 3000)
 const app = createApp(services)
 const server = Bun.serve({

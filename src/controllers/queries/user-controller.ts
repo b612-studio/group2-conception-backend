@@ -20,11 +20,7 @@ export function createUserQueryController({
         return httpFailure(context, user.error)
       }
       const reservations = await read.reservationsFor.execute(user.value)
-      return context.json(
-        (reservations).map(
-          presentReservation,
-        ),
-      )
+      return context.json(reservations.map(presentReservation))
     },
   }
 }

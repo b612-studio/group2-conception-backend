@@ -24,7 +24,7 @@ export class ReserveEventUseCase implements CommandHandler<
     private readonly repository: EventRepository,
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
-  ) { }
+  ) {}
 
   execute(input: ReserveEventCommand) {
     return this.repository.reserve(input.eventId, (event, seats) => {
