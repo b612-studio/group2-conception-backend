@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test'
 import { anApplication } from './support/application-fixture.ts'
-import { TOKEN } from '#/tokens.ts'
+import { TOKEN } from '#/infrastructure/di/tokens.ts'
 import { createContainer } from '#/composition-root.ts'
-import type { ApplicationEvent } from '#/domain/domain-events.ts'
+import type { DomainEvent } from '#/domain/domain-events.ts'
+import type { EventEnvelope } from '#/shared-kernel/event-envelope.ts'
 
 test('one app per container and independent apps do not share repositories or buses', async () => {
   const first = anApplication()
@@ -24,7 +25,7 @@ test('one app per container and independent apps do not share repositories or bu
 
 test('the mock logger receives the event name and payload through the shared bus', async () => {
   const fixture = anApplication()
-  const logs: { message: string; event: ApplicationEvent }[] = []
+  const logs: { message: string; event: EventEnvelope<DomainEvent> }[] = []
   const container = createContainer({
     repository: fixture.repository,
     clock: { now: () => new Date('2030-01-01T00:00:00Z') },
@@ -34,16 +35,17 @@ test('the mock logger receives the event name and payload through the shared bus
       },
     },
   })
-  await container.resolve(TOKEN.ListEventsUseCase).execute({})
+  await container.resolve(TOKEN.CreateEventUseCase).execute(fixture.eventInput)
   expect(logs).toEqual([
     {
-      message: '[notification] EventsListed',
+      message: '[notification] EventCreated',
       event: {
-        type: 'EventsListed',
-        content: { count: 0 },
-        context: {
-          occurredAt: new Date('2030-01-01T00:00:00Z'),
-          version: 'v1',
+        messageId: expect.any(String),
+        occurredAt: new Date('2030-01-01T00:00:00Z'),
+        version: 1,
+        event: {
+          type: 'EventCreated',
+          content: { ...fixture.eventInput, eventId: expect.any(String) },
         },
       },
     },

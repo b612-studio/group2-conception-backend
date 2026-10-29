@@ -1,6 +1,6 @@
 import { createContainer } from '#/composition-root.ts'
 import { createPersistence } from '#/infrastructure/persistence.ts'
-import { TOKEN } from '#/tokens.ts'
+import { TOKEN } from '#/infrastructure/di/tokens.ts'
 
 const persistence = createPersistence(
   process.env.EVENT_REPOSITORY ?? 'postgres',

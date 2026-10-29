@@ -4,8 +4,8 @@ import {
   CircularDependencyError,
   DuplicateRegistrationError,
   UnknownRegistrationError,
-} from '#/container.ts'
-import { createToken } from '#/shared-kernel/token.ts'
+} from '#/infrastructure/di/container.ts'
+import { createToken } from '#/infrastructure/di/token.ts'
 
 describe('Container', () => {
   test('singletons are cached and factories are recreated', () => {

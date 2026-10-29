@@ -1,4 +1,4 @@
-import type { Token } from '#/shared-kernel/token.ts'
+import type { Token } from '#/infrastructure/di/token.ts'
 
 export abstract class ContainerError extends Error {
   protected constructor(message: string) {

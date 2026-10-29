@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 
-import { InMemoryEventBus, type EventBus } from '#/shared-kernel/event-bus.ts'
+import type { EventBus } from '#/shared-kernel/event-bus.ts'
+import { InMemoryEventBus } from '#/infrastructure/messaging/in-memory-event-bus.ts'
 
 function deferred() {
   let resolve!: () => void

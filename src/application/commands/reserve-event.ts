@@ -1,7 +1,8 @@
 import type { CommandHandler } from '#/shared-kernel/command-handler.ts'
 import type { ApplicationError } from '#/application/ports.ts'
 import type { EventBus } from '#/shared-kernel/event-bus.ts'
-import { domainEvent, type ApplicationEvent } from '#/domain/domain-events.ts'
+import type { DomainEvent } from '#/domain/domain-events.ts'
+import type { EventEnvelope } from '#/shared-kernel/event-envelope.ts'
 import { Reservation } from '#/domain/reservation.ts'
 import type { EventId, ReservationId, UserId } from '#/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'
@@ -26,7 +27,7 @@ export class ReserveEventUseCase implements CommandHandler<
     private readonly repository: EventRepository,
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
-    private readonly eventBus: EventBus<ApplicationEvent>,
+    private readonly eventBus: EventBus<EventEnvelope<DomainEvent>>,
   ) {}
 
   async execute(input: ReserveEventCommand) {
@@ -50,18 +51,20 @@ export class ReserveEventUseCase implements CommandHandler<
     )
     if (Result.isSuccess(result)) {
       const reservation = result.value.data
-      await this.eventBus.publish(
-        domainEvent(
-          'EventReserved',
-          {
+      await this.eventBus.publish({
+        messageId: this.ids.next<string>(),
+        occurredAt: this.clock.now(),
+        version: 1,
+        event: {
+          type: 'EventReserved',
+          content: {
             reservationId: reservation.id,
             eventId: reservation.eventId,
             userId: reservation.userId,
             quantity: reservation.quantity,
           },
-          this.clock.now(),
-        ),
-      )
+        },
+      })
     }
     return result
   }

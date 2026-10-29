@@ -1,46 +1,43 @@
 import type { EventId, ReservationId, UserId, VenueId } from '#/domain/ids.ts'
-import type { DomainEvent } from '#/shared-kernel/event-bus.ts'
 
 interface EventDetails {
-  eventId: EventId
-  title: string
-  category: string
-  startsAt: Date
-  capacity: number
-  venueId: VenueId
+  readonly eventId: EventId
+  readonly title: string
+  readonly category: string
+  readonly startsAt: Date
+  readonly capacity: number
+  readonly venueId: VenueId
 }
 
 interface ReservationDetails {
-  reservationId: ReservationId
-  eventId: EventId
-  userId: UserId
-  quantity: number
+  readonly reservationId: ReservationId
+  readonly eventId: EventId
+  readonly userId: UserId
+  readonly quantity: number
 }
 
-interface EventContents {
-  EventCreated: EventDetails
-  EventUpdated: EventDetails
-  EventReserved: ReservationDetails
-  ReservationCancelled: ReservationDetails
-  EventViewed: { eventId: EventId }
-  EventsListed: { category?: string; after?: Date; count: number }
-  ReservationsListed: { userId: UserId; count: number }
+export interface EventCreated {
+  readonly type: 'EventCreated'
+  readonly content: EventDetails
 }
 
-export type ApplicationEvent = {
-  [Type in keyof EventContents]: DomainEvent & {
-    readonly type: Type
-    readonly content: EventContents[Type]
-  }
-}[keyof EventContents]
-
-export function domainEvent<Type extends keyof EventContents>(
-  type: Type,
-  content: EventContents[Type],
-  occurredAt: Date,
-): DomainEvent & {
-  readonly type: Type
-  readonly content: EventContents[Type]
-} {
-  return { type, content, context: { occurredAt, version: 'v1' } }
+export interface EventUpdated {
+  readonly type: 'EventUpdated'
+  readonly content: EventDetails
 }
+
+export interface EventReserved {
+  readonly type: 'EventReserved'
+  readonly content: ReservationDetails
+}
+
+export interface ReservationCancelled {
+  readonly type: 'ReservationCancelled'
+  readonly content: ReservationDetails
+}
+
+export type DomainEvent =
+  | EventCreated
+  | EventUpdated
+  | EventReserved
+  | ReservationCancelled

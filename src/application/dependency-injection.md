@@ -2,15 +2,17 @@
 
 Dependency injection means supplying dependencies from outside an object instead
 of having that object construct them. Use cases receive a repository, clock,
-ID generator where needed, and an event bus through their constructors. They do
-not resolve tokens, open database connections or depend on Hono.
+ID generator and an event bus for commands through their constructors. Queries
+receive only a repository. Neither resolves tokens, opens database connections
+or depends on Hono.
 
 ## Composition root
 
-[container.ts](../container.ts) implements typed singleton and factory
-registrations. It has no application registrations or infrastructure imports.
-[Token creation](../shared-kernel/token.ts) is separate from the
-[application token registry](../tokens.ts).
+[container.ts](../infrastructure/di/container.ts) implements typed singleton and
+factory registrations. It has no application registrations.
+[Token creation](../infrastructure/di/token.ts) is separate from the
+[application token registry](../infrastructure/di/tokens.ts). All DI machinery
+lives in infrastructure; the composition root stays at the root of `src/`.
 
 [composition-root.ts](../composition-root.ts) registers the repository, clock,
 ID generator, event bus, notification subscriber, identity helper, seven use
@@ -37,23 +39,28 @@ keeps its convenience use-case grouping locally; there is no production
 The [event definitions](../domain/domain-events.ts) describe four command facts:
 `EventCreated`, `EventUpdated`, `EventReserved` and `ReservationCancelled`.
 Create and update include the persisted event details. Reservation events include
-booking, event and owner IDs plus quantity. `context` contains the injected-clock
-occurrence time and schema version `v1`.
+booking, event and owner IDs plus quantity. Domain facts contain only a `type`
+and `content`, with no delivery metadata or factory method.
 
-To observe every use case, successful queries also publish `EventViewed`,
-`EventsListed` and `ReservationsListed`. These are application read observations,
-not domain mutations. List observations include a count, not the result arrays.
-Missing-event reads and failed commands emit no success event. The demo identity
-helper is not a use case and does not publish events.
+The shared [EventEnvelope](../shared-kernel/event-envelope.ts) wraps each fact
+with `messageId`, `occurredAt`, `version` and `event`. The message ID identifies
+this occurrence, independently of the business entity's ID. Commands generate
+it through the injected ID generator; time comes from the injected clock.
+The current envelope version is `1`.
 
-Use cases await publication after the repository returns success. They never
-publish inside repository callbacks, which can be retried. The shared
-[InMemoryEventBus](../shared-kernel/event-bus.ts) snapshots listeners, runs them
+Reads never publish events, including successful lookups and empty lists.
+Failed commands and the demo identity helper also publish nothing.
+
+Commands await publication after the repository returns success. They never
+publish inside repository callbacks, which can be retried. The
+[EventBus contract](../shared-kernel/event-bus.ts) stays in the shared kernel;
+[InMemoryEventBus](../infrastructure/messaging/in-memory-event-bus.ts) lives in
+infrastructure. It snapshots listeners, runs them
 concurrently and awaits all of them. It logs both synchronous and asynchronous
 listener failures without rejecting a committed command.
 
-The [mock notification service](../infrastructure/mock-notification-service.ts)
-subscribes once during container creation and logs every event. It sends no real
+The [mock notification service](../infrastructure/notifications/mock-notification-service.ts)
+subscribes once during container creation and logs every envelope with its event type. It sends no real
 notifications. `TOKEN.NotificationSubscription` resolves to its unsubscribe
 function. Production and tests use the same event-bus implementation.
 
