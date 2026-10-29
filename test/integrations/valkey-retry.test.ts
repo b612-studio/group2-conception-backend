@@ -25,7 +25,8 @@ test('functional retry returns immediately on success', async () => {
       },
     },
   )
-  expect(await task(signal())).toBe('done')
+  const candidate = await task(signal())
+  expect(candidate).toBe('done')
   expect(calls).toBe(1)
 })
 
@@ -42,7 +43,8 @@ test('functional retry composes contention with injected backoff', async () => {
       },
     },
   )
-  expect(await task(signal())).toBe('done')
+  const candidate = await task(signal())
+  expect(candidate).toBe('done')
   expect(calls).toBe(3)
   expect(sleeps).toEqual([1, 2])
 })
@@ -63,7 +65,8 @@ test('retry exhaustion is bounded and does not sleep after the last attempt', ()
       },
     },
   )
-  expect(task(signal())).rejects.toThrow('contention exceeded retry limit')
+  const candidate = task(signal())
+  expect(candidate).rejects.toThrow('contention exceeded retry limit')
   expect(calls).toBe(3)
   expect(sleeps).toBe(2)
 })
@@ -71,13 +74,12 @@ test('retry exhaustion is bounded and does not sleep after the last attempt', ()
 test('infrastructure failures propagate without retry', () => {
   const error = new Error('connection lost')
   let calls = 0
-  const run = functionalRetryPolicy({ sleep: async () => { } })
-  expect(
-    run(async () => {
-      calls++
-      throw error
-    }),
-  ).rejects.toBe(error)
+  const run = functionalRetryPolicy({ sleep: async () => {} })
+  const candidate = run(async () => {
+    calls++
+    throw error
+  })
+  expect(candidate).rejects.toBe(error)
   expect(calls).toBe(1)
 })
 
@@ -85,15 +87,16 @@ test('timeout rejects a stalled operation and aborts its signal', () => {
   let received: AbortSignal | undefined
   const run = withTimeout(10, async (abortSignal) => {
     received = abortSignal
-    return new Promise<never>(() => { })
+    return new Promise<never>(() => {})
   })
-  expect(run()).rejects.toThrow('timed out')
+  const candidate = run()
+  expect(candidate).rejects.toThrow('timed out')
   expect(received?.aborted).toBe(true)
 })
 
 test('deadline covers backoff and prevents attempts after timeout', async () => {
   let calls = 0
-  let release: () => void = () => { }
+  let release: () => void = () => {}
   let backoff: Promise<void> | undefined
   const run = functionalRetryPolicy({
     timeoutMs: 10,
@@ -104,12 +107,11 @@ test('deadline covers backoff and prevents attempts after timeout', async () => 
       return backoff
     },
   })
-  expect(
-    run(async () => {
-      calls++
-      return Option.none()
-    }),
-  ).rejects.toThrow('timed out')
+  const candidate = run(async () => {
+    calls++
+    return Option.none()
+  })
+  expect(candidate).rejects.toThrow('timed out')
   release()
   await backoff
   await Bun.sleep(0)
@@ -128,23 +130,22 @@ test('already aborted tasks perform no attempt', () => {
     {
       maxAttempts: 3,
       delay: () => 0,
-      sleep: async () => { },
+      sleep: async () => {},
     },
   )
-  expect(task(controller.signal)).rejects.toThrow('stopped')
+  const candidate = task(controller.signal)
+  expect(candidate).rejects.toThrow('stopped')
   expect(calls).toBe(0)
 })
 
 test('invalid retry and timeout configuration fails before execution', () => {
-  expect(() =>
+  const retryCandidate = () =>
     retry(async () => Option.none(), {
       maxAttempts: 0,
       delay: () => 0,
-      sleep: async () => { },
-    }),
-  ).toThrow('positive integer')
-  expect(() => withTimeout(0, async () => 'done')).toThrow(
-    'positive and finite',
-  )
+      sleep: async () => {},
+    })
+  expect(retryCandidate).toThrow('positive integer')
+  const timeoutCandidate = () => withTimeout(0, async () => 'done')
+  expect(timeoutCandidate).toThrow('positive and finite')
 })
-

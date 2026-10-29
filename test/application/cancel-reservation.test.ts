@@ -25,9 +25,8 @@ test('the owner can cancel and the clock timestamp is persisted', () =>
         ...reservation.data,
         cancelledAt: Option.some(now),
       })
-      expect(await services.read.reservationsFor.execute(alice)).toEqual([
-        cancelled,
-      ])
+      const candidate = await services.read.reservationsFor.execute(alice)
+      expect(candidate).toEqual([cancelled])
     }))
 
 test('another user cannot cancel a booking or release its seats', () =>
@@ -37,16 +36,15 @@ test('another user cannot cancel a booking or release its seats', () =>
     )
     .then(async (result, { services, event, reservation, alice, bob }) => {
       expect(result).toEqual(Result.fail(new NotFound('Reservation not found')))
-      expect(await services.read.reservationsFor.execute(alice)).toEqual([
-        reservation,
-      ])
-      expect(
-        await services.reserve.execute({
-          eventId: event.data.id,
-          userId: bob,
-          quantity: 1,
-        }),
-      ).toEqual(Result.fail(new Conflict('Not enough seats')))
+      const reservationsCandidate =
+        await services.read.reservationsFor.execute(alice)
+      expect(reservationsCandidate).toEqual([reservation])
+      const candidate = await services.reserve.execute({
+        eventId: event.data.id,
+        userId: bob,
+        quantity: 1,
+      })
+      expect(candidate).toEqual(Result.fail(new Conflict('Not enough seats')))
     }))
 
 test('cancellation releases the full quantity for another user', () =>
@@ -64,7 +62,8 @@ test('cancellation releases the full quantity for another user', () =>
         }),
       )
       expect(next.data.quantity).toBe(2)
-      expect(await services.read.reservationsFor.execute(bob)).toEqual([next])
+      const candidate = await services.read.reservationsFor.execute(bob)
+      expect(candidate).toEqual([next])
     }))
 
 test('repeated cancellation preserves the original timestamp and cannot release seats twice', () =>
@@ -95,19 +94,17 @@ test('repeated cancellation preserves the original timestamp and cannot release 
         expect(result).toEqual(
           Result.fail(new Conflict('Reservation is already cancelled')),
         )
-        expect(await services.read.reservationsFor.execute(alice)).toEqual([
-          cancelled,
-        ])
-        expect(await services.read.reservationsFor.execute(bob)).toEqual([
-          replacement,
-        ])
-        expect(
-          await services.reserve.execute({
-            eventId: event.data.id,
-            userId: alice,
-            quantity: 1,
-          }),
-        ).toEqual(Result.fail(new Conflict('Not enough seats')))
+        const aliceCandidate =
+          await services.read.reservationsFor.execute(alice)
+        expect(aliceCandidate).toEqual([cancelled])
+        const bobCandidate = await services.read.reservationsFor.execute(bob)
+        expect(bobCandidate).toEqual([replacement])
+        const candidate = await services.reserve.execute({
+          eventId: event.data.id,
+          userId: alice,
+          quantity: 1,
+        })
+        expect(candidate).toEqual(Result.fail(new Conflict('Not enough seats')))
       },
     ))
 

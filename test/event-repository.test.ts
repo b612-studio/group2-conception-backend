@@ -61,9 +61,9 @@ function reserveSeats(
   quantity = 1,
 ) {
   return repository.reserve(eventId, (event, seats) =>
-    !event.data.capacity.accommodates(seats + quantity)
-      ? Result.fail(new Conflict('Not enough seats'))
-      : Result.succeed(aReservation(eventId, { quantity })),
+    Result.map(event.checkReservation(quantity, seats, createdAt), () =>
+      aReservation(eventId, { quantity }),
+    ),
   )
 }
 
@@ -88,42 +88,54 @@ describe.each(repositoryFactories)(
 
     async function storeEvent(overrides: Partial<EventCreationData> = {}) {
       const event = anEvent(overrides)
-      expect(await repository.createEvent(event)).toEqual(Result.succeed(event))
+      const candidate = await repository.createEvent(event)
+      expect(candidate).toEqual(Result.succeed(event))
       return event
     }
 
     test('empty storage returns None and empty lists; reference users are consistent', async () => {
-      expect(await repository.findEvent(EventId.make())).toEqual(Option.none())
-      expect(await repository.listEvents({})).toEqual([])
-      expect(await repository.listReservations(alice)).toEqual([])
-      expect(await repository.userExists(alice)).toBe(true)
-      expect(await repository.userExists(bob)).toBe(true)
-      expect(await repository.userExists(UserId.make())).toBe(false)
+      const eventCandidate = await repository.findEvent(EventId.make())
+      expect(eventCandidate).toEqual(Option.none())
+      const eventsCandidate = await repository.listEvents({})
+      expect(eventsCandidate).toEqual([])
+      const reservationsCandidate = await repository.listReservations(alice)
+      expect(reservationsCandidate).toEqual([])
+      const aliceCandidate = await repository.userExists(alice)
+      expect(aliceCandidate).toBe(true)
+      const bobCandidate = await repository.userExists(bob)
+      expect(bobCandidate).toBe(true)
+      const unknownUserCandidate = await repository.userExists(UserId.make())
+      expect(unknownUserCandidate).toBe(false)
     })
 
     test('missing mutations return NotFound without invoking callbacks', async () => {
       const callback = () => {
         throw new Error('Callback must not run for a missing record')
       }
-      expect(await repository.updateEvent(EventId.make(), callback)).toEqual(
-        Result.fail(expect.any(NotFound)),
+      const updateCandidate = await repository.updateEvent(
+        EventId.make(),
+        callback,
       )
-      expect(await repository.reserve(EventId.make(), callback)).toEqual(
-        Result.fail(expect.any(NotFound)),
+      expect(updateCandidate).toEqual(Result.fail(expect.any(NotFound)))
+      const reserveCandidate = await repository.reserve(
+        EventId.make(),
+        callback,
       )
-      expect(
-        await repository.cancelReservation(
-          ReservationId.make(),
-          alice,
-          callback,
-        ),
-      ).toEqual(Result.fail(expect.any(NotFound)))
+      expect(reserveCandidate).toEqual(Result.fail(expect.any(NotFound)))
+      const cancelCandidate = await repository.cancelReservation(
+        ReservationId.make(),
+        alice,
+        callback,
+      )
+      expect(cancelCandidate).toEqual(Result.fail(expect.any(NotFound)))
     })
 
     test('createEvent returns the event and makes the complete domain value visible to another client', async () => {
       const event = await storeEvent()
-      expect(await peer.findEvent(event.data.id)).toEqual(Option.some(event))
-      expect(await peer.listEvents({})).toEqual([event])
+      const eventCandidate = await peer.findEvent(event.data.id)
+      expect(eventCandidate).toEqual(Option.some(event))
+      const eventsCandidate = await peer.listEvents({})
+      expect(eventsCandidate).toEqual([event])
     })
 
     test('listEvents filters by exact category and exclusive date, sorting by date then ID', async () => {
@@ -141,46 +153,52 @@ describe.each(repositoryFactories)(
         category: 'music',
         startsAt: new Date('2099-01-03T18:00:00Z'),
       })
-      expect(await repository.listEvents({})).toEqual([early, low, high, other])
-      expect(await repository.listEvents({ category: 'gaming' })).toEqual([
-        early,
-        low,
-        high,
-      ])
-      expect(
-        await repository.listEvents({ after: early.data.startsAt }),
-      ).toEqual([low, high, other])
-      expect(
-        await repository.listEvents({
-          category: 'gaming',
-          after: early.data.startsAt,
-        }),
-      ).toEqual([low, high])
-      expect(await repository.listEvents({ category: 'Gaming' })).toEqual([])
-      expect(
-        await repository.listEvents({ after: other.data.startsAt }),
-      ).toEqual([])
+      const allCandidate = await repository.listEvents({})
+      expect(allCandidate).toEqual([early, low, high, other])
+      const categoryCandidate = await repository.listEvents({
+        category: 'gaming',
+      })
+      expect(categoryCandidate).toEqual([early, low, high])
+      const afterCandidate = await repository.listEvents({
+        after: early.data.startsAt,
+      })
+      expect(afterCandidate).toEqual([low, high, other])
+      const combinedCandidate = await repository.listEvents({
+        category: 'gaming',
+        after: early.data.startsAt,
+      })
+      expect(combinedCandidate).toEqual([low, high])
+      const caseSensitiveCandidate = await repository.listEvents({
+        category: 'Gaming',
+      })
+      expect(caseSensitiveCandidate).toEqual([])
+      const lastDateCandidate = await repository.listEvents({
+        after: other.data.startsAt,
+      })
+      expect(lastDateCandidate).toEqual([])
     })
 
     test('createEvent rejects an unknown venue with InvalidInput and writes nothing', async () => {
-      expect(
-        await repository.createEvent(anEvent({ venueId: VenueId.make() })),
-      ).toEqual(Result.fail(expect.any(InvalidInput)))
-      expect(await peer.listEvents({})).toEqual([])
+      const candidate = await repository.createEvent(
+        anEvent({ venueId: VenueId.make() }),
+      )
+      expect(candidate).toEqual(Result.fail(expect.any(InvalidInput)))
+      const eventsCandidate = await peer.listEvents({})
+      expect(eventsCandidate).toEqual([])
     })
 
     test('duplicate event IDs reject the promise without overwriting the original', async () => {
       const event = await storeEvent()
-      expect(
-        repository.createEvent(
-          anEvent({
-            ...event.data,
-            capacity: event.data.capacity.value,
-            title: 'Duplicate',
-          }),
-        ),
-      ).rejects.toThrow()
-      expect(await peer.findEvent(event.data.id)).toEqual(Option.some(event))
+      const candidate = repository.createEvent(
+        anEvent({
+          ...event.data,
+          capacity: event.data.capacity.value,
+          title: 'Duplicate',
+        }),
+      )
+      expect(candidate).rejects.toThrow()
+      const storedCandidate = await peer.findEvent(event.data.id)
+      expect(storedCandidate).toEqual(Option.some(event))
     })
 
     test('updateEvent passes the current event and reserved seats to the callback, then persists its result', async () => {
@@ -193,37 +211,41 @@ describe.each(repositoryFactories)(
         capacity: 5,
         startsAt: new Date('2099-02-01T18:00:00Z'),
       })
-      expect(
-        await peer.updateEvent(event.data.id, (current, seats) => {
+      const candidate = await peer.updateEvent(
+        event.data.id,
+        (current, seats) => {
           expect(current).toEqual(event)
           expect(seats).toBe(3)
           return Result.succeed(updated)
-        }),
-      ).toEqual(Result.succeed(updated))
-      expect(await repository.findEvent(event.data.id)).toEqual(
-        Option.some(updated),
+        },
       )
+      expect(candidate).toEqual(Result.succeed(updated))
+      const storedCandidate = await repository.findEvent(event.data.id)
+      expect(storedCandidate).toEqual(Option.some(updated))
     })
 
     test('updateEvent preserves storage on callback Failure or unknown venue', async () => {
       const event = await storeEvent()
       const failure = Result.fail(new Conflict('Rejected update'))
-      expect(
-        await repository.updateEvent(event.data.id, () => failure),
-      ).toEqual(failure)
-      expect(await peer.findEvent(event.data.id)).toEqual(Option.some(event))
-      expect(
-        await repository.updateEvent(event.data.id, () =>
-          Result.succeed(
-            anEvent({
-              ...event.data,
-              capacity: event.data.capacity.value,
-              venueId: VenueId.make(),
-            }),
-          ),
+      const failureCandidate = await repository.updateEvent(
+        event.data.id,
+        () => failure,
+      )
+      expect(failureCandidate).toEqual(failure)
+      const afterFailureCandidate = await peer.findEvent(event.data.id)
+      expect(afterFailureCandidate).toEqual(Option.some(event))
+      const venueCandidate = await repository.updateEvent(event.data.id, () =>
+        Result.succeed(
+          anEvent({
+            ...event.data,
+            capacity: event.data.capacity.value,
+            venueId: VenueId.make(),
+          }),
         ),
-      ).toEqual(Result.fail(expect.any(InvalidInput)))
-      expect(await peer.findEvent(event.data.id)).toEqual(Option.some(event))
+      )
+      expect(venueCandidate).toEqual(Result.fail(expect.any(InvalidInput)))
+      const afterVenueCandidate = await peer.findEvent(event.data.id)
+      expect(afterVenueCandidate).toEqual(Option.some(event))
     })
 
     test('reserve passes the current event and accumulated seats, persisting the returned reservation', async () => {
@@ -232,31 +254,32 @@ describe.each(repositoryFactories)(
         await reserveSeats(repository, event.data.id, 2),
       )
       const second = aReservation(event.data.id, { userId: bob, quantity: 3 })
-      expect(
-        await peer.reserve(event.data.id, (current, seats) => {
-          expect(current).toEqual(event)
-          expect(seats).toBe(2)
-          return Result.succeed(second)
-        }),
-      ).toEqual(Result.succeed(second))
-      expect(await repository.listReservations(alice)).toEqual([first])
-      expect(await repository.listReservations(bob)).toEqual([second])
+      const candidate = await peer.reserve(event.data.id, (current, seats) => {
+        expect(current).toEqual(event)
+        expect(seats).toBe(2)
+        return Result.succeed(second)
+      })
+      expect(candidate).toEqual(Result.succeed(second))
+      const aliceCandidate = await repository.listReservations(alice)
+      expect(aliceCandidate).toEqual([first])
+      const bobCandidate = await repository.listReservations(bob)
+      expect(bobCandidate).toEqual([second])
     })
 
     test('reserve preserves storage on callback Failure or unknown user', async () => {
       const event = await storeEvent()
       const failure = Result.fail(new Conflict('Rejected reservation'))
-      expect(await repository.reserve(event.data.id, () => failure)).toEqual(
-        failure,
+      const failureCandidate = await repository.reserve(
+        event.data.id,
+        () => failure,
       )
-      expect(
-        await repository.reserve(event.data.id, () =>
-          Result.succeed(
-            aReservation(event.data.id, { userId: UserId.make() }),
-          ),
-        ),
-      ).toEqual(Result.fail(expect.any(InvalidInput)))
-      expect(await peer.listReservations(alice)).toEqual([])
+      expect(failureCandidate).toEqual(failure)
+      const userCandidate = await repository.reserve(event.data.id, () =>
+        Result.succeed(aReservation(event.data.id, { userId: UserId.make() })),
+      )
+      expect(userCandidate).toEqual(Result.fail(expect.any(InvalidInput)))
+      const reservationsCandidate = await peer.listReservations(alice)
+      expect(reservationsCandidate).toEqual([])
       await peer.updateEvent(event.data.id, (current, seats) => {
         expect(seats).toBe(0)
         return Result.succeed(current)
@@ -276,11 +299,10 @@ describe.each(repositoryFactories)(
       })
       const bobs = aReservation(event.data.id, { userId: bob })
       for (const reservation of [later, high, low, bobs]) {
-        expect(
-          await repository.reserve(event.data.id, () =>
-            Result.succeed(reservation),
-          ),
-        ).toEqual(Result.succeed(reservation))
+        const candidate = await repository.reserve(event.data.id, () =>
+          Result.succeed(reservation),
+        )
+        expect(candidate).toEqual(Result.succeed(reservation))
       }
       const cancelled = new Reservation({
         ...low.data,
@@ -291,12 +313,10 @@ describe.each(repositoryFactories)(
           Result.succeed(cancelled),
         ),
       )
-      expect(await repository.listReservations(alice)).toEqual([
-        cancelled,
-        high,
-        later,
-      ])
-      expect(await repository.listReservations(bob)).toEqual([bobs])
+      const aliceCandidate = await repository.listReservations(alice)
+      expect(aliceCandidate).toEqual([cancelled, high, later])
+      const bobCandidate = await repository.listReservations(bob)
+      expect(bobCandidate).toEqual([bobs])
     })
 
     test('cancelReservation hides other users records without invoking the callback', async () => {
@@ -304,12 +324,16 @@ describe.each(repositoryFactories)(
       const reservation = Result.getOrThrow(
         await reserveSeats(repository, event.data.id),
       )
-      expect(
-        await peer.cancelReservation(reservation.data.id, bob, () => {
+      const candidate = await peer.cancelReservation(
+        reservation.data.id,
+        bob,
+        () => {
           throw new Error('Callback must not run for another user')
-        }),
-      ).toEqual(Result.fail(expect.any(NotFound)))
-      expect(await repository.listReservations(alice)).toEqual([reservation])
+        },
+      )
+      expect(candidate).toEqual(Result.fail(expect.any(NotFound)))
+      const reservationsCandidate = await repository.listReservations(alice)
+      expect(reservationsCandidate).toEqual([reservation])
     })
 
     test('cancelReservation passes the stored value, preserves callback Failure and persists Success', async () => {
@@ -318,23 +342,29 @@ describe.each(repositoryFactories)(
         await reserveSeats(repository, event.data.id),
       )
       const failure = Result.fail(new Conflict('Rejected cancellation'))
-      expect(
-        await peer.cancelReservation(reservation.data.id, alice, (current) => {
+      const failureCandidate = await peer.cancelReservation(
+        reservation.data.id,
+        alice,
+        (current) => {
           expect(current).toEqual(reservation)
           return failure
-        }),
-      ).toEqual(failure)
-      expect(await repository.listReservations(alice)).toEqual([reservation])
+        },
+      )
+      expect(failureCandidate).toEqual(failure)
+      const afterFailureCandidate = await repository.listReservations(alice)
+      expect(afterFailureCandidate).toEqual([reservation])
       const cancelled = new Reservation({
         ...reservation.data,
         cancelledAt: Option.some(cancelledAt),
       })
-      expect(
-        await peer.cancelReservation(reservation.data.id, alice, () =>
-          Result.succeed(cancelled),
-        ),
-      ).toEqual(Result.succeed(cancelled))
-      expect(await repository.listReservations(alice)).toEqual([cancelled])
+      const candidate = await peer.cancelReservation(
+        reservation.data.id,
+        alice,
+        () => Result.succeed(cancelled),
+      )
+      expect(candidate).toEqual(Result.succeed(cancelled))
+      const storedCandidate = await repository.listReservations(alice)
+      expect(storedCandidate).toEqual([cancelled])
     })
 
     test('reservedSeats counts quantities only for active reservations on the requested event', async () => {
@@ -360,12 +390,11 @@ describe.each(repositoryFactories)(
         return Result.succeed(current)
       })
       const failure = Result.fail(new Conflict('Observe without writing'))
-      expect(
-        await peer.reserve(event.data.id, (_, seats) => {
-          expect(seats).toBe(3)
-          return failure
-        }),
-      ).toEqual(failure)
+      const candidate = await peer.reserve(event.data.id, (_, seats) => {
+        expect(seats).toBe(3)
+        return failure
+      })
+      expect(candidate).toEqual(failure)
     })
 
     test('concurrent reserve callbacks serialize capacity checks and writes across clients', async () => {
@@ -375,37 +404,33 @@ describe.each(repositoryFactories)(
           reserveSeats(index % 2 ? repository : peer, event.data.id),
         ),
       )
-      expect(
-        results.filter((result) => result._tag === 'Success'),
-      ).toHaveLength(1)
-      expect(
-        results.filter((result) => result._tag === 'Failure'),
-      ).toHaveLength(11)
-      expect(await repository.listReservations(alice)).toHaveLength(1)
+      expect(results.filter(Result.isSuccess)).toHaveLength(1)
+      expect(results.filter(Result.isFailure)).toHaveLength(11)
+      const candidate = await repository.listReservations(alice)
+      expect(candidate).toHaveLength(1)
     })
 
     test('concurrent updateEvent and reserve callbacks share the same serialization boundary', async () => {
       const event = await storeEvent({ capacity: 2 })
       const smaller = anEvent({ ...event.data, capacity: 1 })
       const results = await Promise.all([
-        repository.updateEvent(event.data.id, (_, seats) =>
-          !smaller.data.capacity.accommodates(seats)
-            ? Result.fail(new Conflict('Capacity below reserved seats'))
-            : Result.succeed(smaller),
-        ),
+        repository.updateEvent(event.data.id, (_, seats) => {
+          if (!smaller.data.capacity.accommodates(seats)) {
+            return Result.fail(new Conflict('Capacity below reserved seats'))
+          }
+          return Result.succeed(smaller)
+        }),
         reserveSeats(peer, event.data.id, 2),
       ])
-      expect(
-        results.filter((result) => result._tag === 'Success'),
-      ).toHaveLength(1)
-      expect(
-        results.filter((result) => result._tag === 'Failure'),
-      ).toHaveLength(1)
-      expect(await repository.findEvent(event.data.id)).toEqual(
-        Option.some(results[0]!._tag === 'Success' ? smaller : event),
+      expect(results.filter(Result.isSuccess)).toHaveLength(1)
+      expect(results.filter(Result.isFailure)).toHaveLength(1)
+      const eventCandidate = await repository.findEvent(event.data.id)
+      expect(eventCandidate).toEqual(
+        Option.some(Result.isSuccess(results[0]!) ? smaller : event),
       )
-      expect(await repository.listReservations(alice)).toHaveLength(
-        results[1]!._tag === 'Success' ? 1 : 0,
+      const reservationsCandidate = await repository.listReservations(alice)
+      expect(reservationsCandidate).toHaveLength(
+        Result.isSuccess(results[1]!) ? 1 : 0,
       )
     })
   },

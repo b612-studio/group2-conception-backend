@@ -32,9 +32,8 @@ test('reserving persists the quantity, owner, generated ID and clock timestamp',
         createdAt: new Date('2030-01-01T00:00:00Z'),
         cancelledAt: Option.none(),
       })
-      expect(await services.read.reservationsFor.execute(alice)).toEqual([
-        reservation,
-      ])
+      const candidate = await services.read.reservationsFor.execute(alice)
+      expect(candidate).toEqual([reservation])
     }))
 
 test('competing reservations cannot both claim the last seat', () =>
@@ -51,10 +50,8 @@ test('competing reservations cannot both claim the last seat', () =>
       ),
     )
     .then(async (results, { services, alice, bob }) => {
-      expect(
-        results.filter((result) => result._tag === 'Success'),
-      ).toHaveLength(1)
-      expect(results.filter((result) => result._tag === 'Failure')).toEqual([
+      expect(results.filter(Result.isSuccess)).toHaveLength(1)
+      expect(results.filter(Result.isFailure)).toEqual([
         Result.fail(new Conflict('Not enough seats')),
       ])
       const stored = [
@@ -62,9 +59,7 @@ test('competing reservations cannot both claim the last seat', () =>
         ...(await services.read.reservationsFor.execute(bob)),
       ]
       expect(stored).toEqual(
-        results.flatMap((result) =>
-          result._tag === 'Success' ? [result.value] : [],
-        ),
+        results.filter(Result.isSuccess).map((result) => result.value),
       )
     }))
 
@@ -85,16 +80,15 @@ test.each([0, -1, 1.5, 2147483648])(
             new InvalidInput('Quantity must be a positive 32-bit integer'),
           ),
         )
-        expect(await services.read.reservationsFor.execute(alice)).toEqual([])
-        expect(
-          (
-            await services.reserve.execute({
-              eventId: event.data.id,
-              userId: alice,
-              quantity: 1,
-            })
-          )._tag,
-        ).toBe('Success')
+        const reservationsCandidate =
+          await services.read.reservationsFor.execute(alice)
+        expect(reservationsCandidate).toEqual([])
+        const candidate = await services.reserve.execute({
+          eventId: event.data.id,
+          userId: alice,
+          quantity: 1,
+        })
+        expect(Result.isSuccess(candidate)).toBe(true)
       }),
 )
 
@@ -109,10 +103,10 @@ test('overbooking preserves existing reservations', () =>
     )
     .then(async (result, { services, reservation, alice, bob }) => {
       expect(result).toEqual(Result.fail(new Conflict('Not enough seats')))
-      expect(await services.read.reservationsFor.execute(alice)).toEqual([
-        reservation,
-      ])
-      expect(await services.read.reservationsFor.execute(bob)).toEqual([])
+      const aliceCandidate = await services.read.reservationsFor.execute(alice)
+      expect(aliceCandidate).toEqual([reservation])
+      const bobCandidate = await services.read.reservationsFor.execute(bob)
+      expect(bobCandidate).toEqual([])
     }))
 
 test('booking at the start uses the current clock and leaves no reservation', () =>
@@ -132,7 +126,8 @@ test('booking at the start uses the current clock and leaves no reservation', ()
       expect(result).toEqual(
         Result.fail(new Conflict('Event has already started')),
       )
-      expect(await services.read.reservationsFor.execute(alice)).toEqual([])
+      const candidate = await services.read.reservationsFor.execute(alice)
+      expect(candidate).toEqual([])
     }))
 
 test('a missing event returns NotFound without a booking', () =>
@@ -146,7 +141,8 @@ test('a missing event returns NotFound without a booking', () =>
     )
     .then(async (result, { services, alice }) => {
       expect(result).toEqual(Result.fail(new NotFound('Event not found')))
-      expect(await services.read.reservationsFor.execute(alice)).toEqual([])
+      const candidate = await services.read.reservationsFor.execute(alice)
+      expect(candidate).toEqual([])
     }))
 
 test('an unknown user cannot book or consume capacity', () =>
@@ -167,16 +163,13 @@ test('an unknown user cannot book or consume capacity', () =>
           new InvalidInput('Referenced venue or user does not exist'),
         ),
       )
-      expect(await services.read.reservationsFor.execute(unknownUser)).toEqual(
-        [],
-      )
-      expect(
-        (
-          await services.reserve.execute({
-            eventId: event.data.id,
-            userId: alice,
-            quantity: 1,
-          })
-        )._tag,
-      ).toBe('Success')
+      const reservationsCandidate =
+        await services.read.reservationsFor.execute(unknownUser)
+      expect(reservationsCandidate).toEqual([])
+      const candidate = await services.reserve.execute({
+        eventId: event.data.id,
+        userId: alice,
+        quantity: 1,
+      })
+      expect(Result.isSuccess(candidate)).toBe(true)
     }))

@@ -25,7 +25,7 @@ const reservationColumns =
   'id, event_id, user_id, quantity, created_at, cancelled_at'
 
 export class PostgresEventRepository implements EventRepository {
-  constructor(private readonly sql: SQL) {}
+  constructor(private readonly sql: SQL) { }
 
   async listEvents(filter: EventFilter) {
     const rows = await this.sql<EventEntity[]>`
@@ -68,7 +68,7 @@ export class PostgresEventRepository implements EventRepository {
           return Result.fail(new NotFound('Event not found'))
         }
         const updated = change(found.value, await this.reservedSeats(tx, id))
-        if (updated._tag === 'Failure') {
+        if (Result.isFailure(updated)) {
           return updated
         }
         const entity = eventToEntity(updated.value)
@@ -96,7 +96,7 @@ export class PostgresEventRepository implements EventRepository {
           found.value,
           await this.reservedSeats(tx, eventId),
         )
-        if (result._tag === 'Failure') {
+        if (Result.isFailure(result)) {
           return result
         }
         const d = reservationToEntity(result.value)
@@ -130,7 +130,7 @@ export class PostgresEventRepository implements EventRepository {
         return Result.fail(new NotFound('Reservation not found'))
       }
       const updated = change(reservationFromRow(found.value))
-      if (updated._tag === 'Failure') {
+      if (Result.isFailure(updated)) {
         return updated
       }
       const entity = reservationToEntity(updated.value)
@@ -158,7 +158,7 @@ export class PostgresEventRepository implements EventRepository {
       { seats: number }[]
     >`SELECT COALESCE(SUM(quantity), 0)::int AS seats
       FROM reservations WHERE event_id = ${eventId} AND cancelled_at IS NULL`
-    return row!.seats
+    return row.seats
   }
 
   private async write<Value>(
@@ -174,6 +174,6 @@ export class PostgresEventRepository implements EventRepository {
       // Lost connections, corrupt SQL and driver faults are not business failures.
       throw cause
     })
-    return result._tag === 'Failure' ? result : result.value
+    return Result.flatten(result)
   }
 }

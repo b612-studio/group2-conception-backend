@@ -11,6 +11,7 @@ import { EventId, ReservationId, UserId, VenueId } from '#/domain/ids.ts'
 import { InvalidInput, NotFound } from '#/domain/errors.ts'
 import { Option } from '#/shared-kernel/option.ts'
 import { Result } from '#/shared-kernel/result.ts'
+import { matchesEventFilter } from '#/infrastructure/repository/event-predicates.ts'
 
 function stateSchema<const TDate extends v.GenericSchema>(dateSchema: TDate) {
   return v.strictObject({
@@ -100,12 +101,7 @@ export class ValkeyEventRepository implements EventRepository {
   async listEvents(filter: EventFilter) {
     const { state } = await this.read()
     return state.events
-      .filter(
-        ({ data }) =>
-          (filter.category === undefined ||
-            data.category === filter.category) &&
-          (filter.after === undefined || data.startsAt > filter.after),
-      )
+      .filter(matchesEventFilter(filter))
       .sort(
         (a, b) =>
           a.data.startsAt.getTime() - b.data.startsAt.getTime() ||
@@ -145,7 +141,7 @@ export class ValkeyEventRepository implements EventRepository {
         return Result.fail(new NotFound('Event not found'))
       }
       const changed = change(event, this.reservedSeats(state, id))
-      if (changed._tag === 'Failure') {
+      if (Result.isFailure(changed)) {
         return changed
       }
       if (!this.references.venues.has(changed.value.data.venueId)) {
@@ -169,7 +165,7 @@ export class ValkeyEventRepository implements EventRepository {
         return Result.fail(new NotFound('Event not found'))
       }
       const result = create(event, this.reservedSeats(state, eventId))
-      if (result._tag === 'Failure') {
+      if (Result.isFailure(result)) {
         return result
       }
       if (!this.references.users.has(result.value.data.userId)) {
@@ -210,7 +206,7 @@ export class ValkeyEventRepository implements EventRepository {
         return Result.fail(new NotFound('Reservation not found'))
       }
       const changed = change(reservation)
-      if (changed._tag === 'Success') {
+      if (Result.isSuccess(changed)) {
         state.reservations[index] = changed.value
       }
       return changed
@@ -276,7 +272,7 @@ export class ValkeyEventRepository implements EventRepository {
       const { raw, state } = await this.read()
       signal?.throwIfAborted()
       const result = operation(state)
-      if (result._tag === 'Failure') {
+      if (Result.isFailure(result)) {
         return Option.some(result)
       }
       const next = v.parse(encodeState, {
@@ -297,7 +293,10 @@ export class ValkeyEventRepository implements EventRepository {
         raw ?? '',
         next,
       ])
-      return saved === 1 ? Option.some(result) : Option.none()
+      if (saved === 1) {
+        return Option.some(result)
+      }
+      return Option.none()
     })
   }
 }
