@@ -1,4 +1,10 @@
 services:
+  otel-desktop-viewer:
+    image: ghcr.io/ctrlspice/otel-desktop-viewer:v0.6.0
+    ports:
+      - '127.0.0.1:${OTEL_VIEWER_PORT:-8000}:8000'
+      - '127.0.0.1:${OTEL_HTTP_PORT:-4318}:4318'
+
   postgres:
     image: postgres:17-alpine
     environment:

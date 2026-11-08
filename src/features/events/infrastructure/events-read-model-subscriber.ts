@@ -1,3 +1,4 @@
+import { inSpan } from '#/platform/observability/spans.ts'
 import type {
   EventReadRepository,
   EventProjectionRepository,
@@ -14,7 +15,10 @@ export function createEventsReadModelSubscriber(
 ) {
   let pending = Promise.resolve()
   const refresh = () => {
-    const next = pending.then(async () => {
+    const previous = pending
+    const next = inSpan('events.readModel.refresh', async () => {
+      // Include queue wait in refresh duration, but not in the query spans.
+      await previous
       const events = await source.listEvents({})
       await projection.replaceEvents(events)
     })

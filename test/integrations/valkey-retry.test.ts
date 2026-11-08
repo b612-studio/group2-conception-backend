@@ -49,7 +49,7 @@ test('functional retry composes contention with injected backoff', async () => {
   expect(sleeps).toEqual([1, 2])
 })
 
-test('retry exhaustion is bounded and does not sleep after the last attempt', () => {
+test('retry exhaustion is bounded and does not sleep after the last attempt', async () => {
   let calls = 0
   let sleeps = 0
   const task = retry(
@@ -66,12 +66,12 @@ test('retry exhaustion is bounded and does not sleep after the last attempt', ()
     },
   )
   const candidate = task(signal())
-  expect(candidate).rejects.toThrow('contention exceeded retry limit')
+  await expect(candidate).rejects.toThrow('contention exceeded retry limit')
   expect(calls).toBe(3)
   expect(sleeps).toBe(2)
 })
 
-test('infrastructure failures propagate without retry', () => {
+test('infrastructure failures propagate without retry', async () => {
   const error = new Error('connection lost')
   let calls = 0
   const run = functionalRetryPolicy({ sleep: async () => {} })
@@ -79,18 +79,18 @@ test('infrastructure failures propagate without retry', () => {
     calls++
     throw error
   })
-  expect(candidate).rejects.toBe(error)
+  await expect(candidate).rejects.toBe(error)
   expect(calls).toBe(1)
 })
 
-test('timeout rejects a stalled operation and aborts its signal', () => {
+test('timeout rejects a stalled operation and aborts its signal', async () => {
   let received: AbortSignal | undefined
   const run = withTimeout(10, async (abortSignal) => {
     received = abortSignal
     return new Promise<never>(() => {})
   })
   const candidate = run()
-  expect(candidate).rejects.toThrow('timed out')
+  await expect(candidate).rejects.toThrow('timed out')
   expect(received?.aborted).toBe(true)
 })
 
@@ -111,14 +111,14 @@ test('deadline covers backoff and prevents attempts after timeout', async () => 
     calls++
     return Option.none()
   })
-  expect(candidate).rejects.toThrow('timed out')
+  await expect(candidate).rejects.toThrow('timed out')
   release()
   await backoff
   await Bun.sleep(0)
   expect(calls).toBe(1)
 })
 
-test('already aborted tasks perform no attempt', () => {
+test('already aborted tasks perform no attempt', async () => {
   const controller = new AbortController()
   controller.abort(new Error('stopped'))
   let calls = 0
@@ -134,7 +134,7 @@ test('already aborted tasks perform no attempt', () => {
     },
   )
   const candidate = task(controller.signal)
-  expect(candidate).rejects.toThrow('stopped')
+  await expect(candidate).rejects.toThrow('stopped')
   expect(calls).toBe(0)
 })
 

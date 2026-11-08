@@ -61,8 +61,6 @@ async function postgres(): Promise<IdentityRepositoryFixture> {
     await sql.unsafe(
       await Bun.file(new URL('../../sql/_schema.sql', import.meta.url)).text(),
     )
-    await sql`INSERT INTO identity.users (id, name, email) VALUES
-      (${alice}, 'Alice', 'alice@example.com'), (${bob}, 'Bob', 'bob@example.com')`
     return {
       repository: new PostgresIdentityRepository(sql),
       peer: new PostgresIdentityRepository(peer),

@@ -1,4 +1,7 @@
 import { RedisClient, SQL } from 'bun'
+import { startTelemetry } from '#/platform/observability/telemetry.ts'
+import { inSpan } from '#/platform/observability/spans.ts'
+import { otelNotificationLogger } from '#/features/notifications/infrastructure/otel-notification-logger.ts'
 import { createContainer } from '#/composition-root.ts'
 import { TOKEN } from '#/platform/di/tokens.ts'
 import { PostgresEventRepository } from '#/features/events/infrastructure/repository/postgres-event-repository.ts'
@@ -7,6 +10,7 @@ import { PostgresOutboxStore } from '#/features/events/infrastructure/postgres-o
 import { ValkeyEventReadRepository } from '#/features/events/infrastructure/repository/valkey-event-read-repository.ts'
 import { PostgresNotificationRepository } from '#/features/notifications/infrastructure/postgres-notification-repository.ts'
 
+const telemetry = startTelemetry()
 const sql = new SQL(
   process.env.DATABASE_URL ?? 'postgres://events:events@localhost:55432/events',
 )
@@ -22,11 +26,21 @@ try {
     outboxStore: new PostgresOutboxStore(sql),
     readRepository: new ValkeyEventReadRepository(redis),
     notificationRepository: new PostgresNotificationRepository(sql),
+    notificationLogger: otelNotificationLogger,
   })
-  console.log(
-    `Delivered ${await container.resolve(TOKEN.OutboxDispatcher).drain(Number(process.argv[2] ?? 100))} messages`,
-  )
+  const delivered = await inSpan('outbox.drain', async (span) => {
+    const count = await container
+      .resolve(TOKEN.OutboxDispatcher)
+      .drain(Number(process.argv[2] ?? 100))
+    span.setAttribute('messaging.batch.message_count', count)
+    return count
+  })
+  console.log(`Delivered ${delivered} messages`)
 } finally {
-  redis.close()
-  await sql.close()
+  try {
+    redis.close()
+    await sql.close()
+  } finally {
+    await telemetry.shutdown()
+  }
 }

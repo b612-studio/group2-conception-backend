@@ -72,12 +72,13 @@ to `.rejects`:
 
 ```ts
 const candidate = repository.createEvent(duplicateEvent)
-expect(candidate).rejects.toThrow()
+await expect(candidate).rejects.toThrow()
 ```
 
 Awaiting `repository.createEvent` first would throw before the assertion runs.
-Bun's built-in rejection matchers inspect the promise without an explicit
-`await`. This convention is specific to Bun, not a rule for other test runners.
+Await the assertion instead. Oxlint uses `@vitest/eslint-plugin` with
+`bun:test` imports enabled and requires explicit awaits for `.rejects` and
+`.resolves`, even though Bun can inspect rejection promises synchronously.
 
 For a synchronous exception, keep the operation in a function so the matcher
 can invoke it and inspect the throw:

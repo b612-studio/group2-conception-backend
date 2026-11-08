@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { RedisClient } from 'bun'
 import { GenericContainer } from 'testcontainers'
+import * as v from 'valibot'
 import { createContainer } from '#/composition-root.ts'
 import { TOKEN } from '#/platform/di/tokens.ts'
 import { ValkeyEventReadRepository } from '#/features/events/infrastructure/repository/valkey-event-read-repository.ts'
@@ -29,6 +30,37 @@ beforeAll(async () => {
 }, 60_000)
 afterAll(async () => {
   await close()
+})
+
+test('a missing snapshot is an empty read model', async () => {
+  const key = 'test:read-model:missing'
+  await client.del(key)
+  const projection = new ValkeyEventReadRepository(client, key)
+  expect(await projection.listEvents({})).toEqual([])
+})
+
+test.each([
+  { name: 'invalid JSON', raw: '{broken' },
+  { name: 'a non-array snapshot', raw: '{}' },
+  { name: 'missing event fields', raw: '[{"id":"event-id"}]' },
+  {
+    name: 'an invalid timestamp',
+    raw: JSON.stringify([
+      {
+        id: 'event-id',
+        title: 'Event',
+        category: 'music',
+        starts_at: 'not-a-date',
+        capacity: 10,
+        venue_id: 'venue-id',
+      },
+    ]),
+  },
+])('Valibot rejects $name in the stored snapshot', async ({ raw }) => {
+  const key = 'test:read-model:invalid'
+  await client.set(key, raw)
+  const projection = new ValkeyEventReadRepository(client, key)
+  await expect(projection.listEvents({})).rejects.toBeInstanceOf(v.ValiError)
 })
 
 test('event queries use Valkey while writes and seat checks use the authoritative repository', async () => {
@@ -131,7 +163,7 @@ test('refreshes are serialized, recover after failure, and ignore stale message 
     fixture.repository,
     projection,
   )
-  expect(await subscriber.refresh()).rejects.toThrow('Valkey unavailable')
+  await expect(subscriber.refresh()).rejects.toThrow('Valkey unavailable')
   await Promise.all([subscriber.refresh(), subscriber.refresh()])
   expect(saved).toHaveLength(2)
   const bus = new InMemoryEventBus<DomainEvent>()

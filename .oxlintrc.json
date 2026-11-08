@@ -1,6 +1,21 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript"],
+  "jsPlugins": [{ "name": "vitest-js", "specifier": "@vitest/eslint-plugin" }],
+  "settings": {
+    "vitest": {
+      "vitestImports": ["bun:test"]
+    }
+  },
+  "overrides": [
+    {
+      "files": ["test/**/*.test.ts"],
+      "rules": {
+        "vitest-js/valid-expect": ["error", { "alwaysAwait": true }],
+        "vitest-js/valid-expect-in-promise": "error"
+      }
+    }
+  ],
   "categories": {
     "correctness": "error"
   },

@@ -211,7 +211,7 @@ describe.each(repositoryFactories)(
           title: 'Duplicate',
         }),
       )
-      expect(candidate).rejects.toThrow()
+      await expect(candidate).rejects.toThrow()
       const storedCandidate = await peer.findEvent(event.data.id)
       expect(storedCandidate).toEqual(Option.some(event))
     })

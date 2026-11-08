@@ -1,3 +1,6 @@
+import { SpanKind } from '@opentelemetry/api'
+import { measureOperation } from '#/platform/observability/operation-metrics.ts'
+import { inSpan } from '#/platform/observability/spans.ts'
 import type {
   EventBus,
   MessageListener,
@@ -45,22 +48,39 @@ export class InMemoryEventBus<
   }
 
   async publish(message: EventEnvelope<Event>): Promise<void> {
-    const listeners = this.listenersByTag.get(message.event._tag)
-    if (!listeners) {
-      return
-    }
-    const results = await Promise.allSettled(
-      [...listeners].map(async (listener) => listener(message)),
-    )
-    const failures: unknown[] = []
-    for (const result of results) {
-      if (result.status === 'rejected') {
-        console.error('Event listener failed', result.reason)
-        failures.push(result.reason)
+    return inSpan('event.publish', async (span) => {
+      span.setAttribute('event.type', message.event._tag)
+      const listeners = this.listenersByTag.get(message.event._tag)
+      if (!listeners) {
+        return
       }
-    }
-    if (this.propagateFailures && failures.length > 0) {
-      throw new AggregateError(failures, 'Event delivery failed')
-    }
+      const results = await Promise.allSettled(
+        [...listeners].map((listener) =>
+          inSpan(
+            'event.listener',
+            () =>
+              measureOperation(
+                'events.messaging.listener.duration',
+                { 'event.type': message.event._tag },
+                () => listener(message),
+              ),
+            {
+              kind: SpanKind.CONSUMER,
+              attributes: { 'event.type': message.event._tag },
+            },
+          ),
+        ),
+      )
+      const failures: unknown[] = []
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          console.error('Event listener failed', result.reason)
+          failures.push(result.reason)
+        }
+      }
+      if (this.propagateFailures && failures.length > 0) {
+        throw new AggregateError(failures, 'Event delivery failed')
+      }
+    })
   }
 }

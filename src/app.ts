@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { httpObservability } from '#/platform/observability/http-middleware.ts'
 import { documentationRoutes } from '#/platform/http/openapi.ts'
 import { HttpStatusCode } from '#/platform/http/http-code.ts'
 import { HTTPException } from 'hono/http-exception'
@@ -15,6 +16,7 @@ export function createApp(
   ...middlewares: MiddlewareHandler[]
 ) {
   const app = new Hono()
+  app.use('*', httpObservability())
   app.use('*', authenticate)
   for (const middleware of middlewares) {
     app.use('*', middleware)

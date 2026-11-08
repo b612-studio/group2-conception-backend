@@ -1,4 +1,8 @@
 import type { RedisClient } from 'bun'
+import {
+  repositorySpan,
+  valkeyCommand,
+} from '#/platform/observability/spans.ts'
 import * as v from 'valibot'
 import type {
   ApplicationError,
@@ -104,32 +108,40 @@ export class ValkeyEventRepository implements EventRepository {
   ) {}
 
   async listEvents(filter: EventFilter) {
-    const { state } = await this.read()
-    return state.events
-      .filter(matchesEventFilter(filter))
-      .sort(
-        (a, b) =>
-          a.data.startsAt.getTime() - b.data.startsAt.getTime() ||
-          a.data.id.localeCompare(b.data.id),
-      )
+    return repositorySpan('EventRepository.listEvents', async () => {
+      const { state } = await this.read()
+      return state.events
+        .filter(matchesEventFilter(filter))
+        .sort(
+          (a, b) =>
+            a.data.startsAt.getTime() - b.data.startsAt.getTime() ||
+            a.data.id.localeCompare(b.data.id),
+        )
+    })
   }
 
   async findEvent(id: EventId): Promise<Option<Event>> {
-    const { state } = await this.read()
-    return Option.fromNullable(state.events.find(({ data }) => data.id === id))
+    return repositorySpan('EventRepository.findEvent', async () => {
+      const { state } = await this.read()
+      return Option.fromNullable(
+        state.events.find(({ data }) => data.id === id),
+      )
+    })
   }
 
   async createEvent(event: Event): Promise<Result<Event, ApplicationError>> {
-    return this.mutate((state) => {
-      if (!this.references.venues.has(event.data.venueId)) {
-        return this.invalidReference()
-      }
-      if (state.events.some(({ data }) => data.id === event.data.id)) {
-        throw new Error('Duplicate event ID')
-      }
-      state.events.push(event)
-      return Result.succeed(event)
-    })
+    return repositorySpan('EventRepository.createEvent', () =>
+      this.mutate((state) => {
+        if (!this.references.venues.has(event.data.venueId)) {
+          return this.invalidReference()
+        }
+        if (state.events.some(({ data }) => data.id === event.data.id)) {
+          throw new Error('Duplicate event ID')
+        }
+        state.events.push(event)
+        return Result.succeed(event)
+      }),
+    )
   }
 
   async updateEvent(
@@ -139,22 +151,24 @@ export class ValkeyEventRepository implements EventRepository {
       reservedSeats: number,
     ) => Result<Event, ApplicationError>,
   ): Promise<Result<Event, ApplicationError>> {
-    return this.mutate((state) => {
-      const index = state.events.findIndex(({ data }) => data.id === id)
-      const event = state.events[index]
-      if (!event) {
-        return Result.fail(new NotFound('Event not found'))
-      }
-      const changed = change(event, this.reservedSeats(state, id))
-      if (Result.isFailure(changed)) {
+    return repositorySpan('EventRepository.updateEvent', () =>
+      this.mutate((state) => {
+        const index = state.events.findIndex(({ data }) => data.id === id)
+        const event = state.events[index]
+        if (!event) {
+          return Result.fail(new NotFound('Event not found'))
+        }
+        const changed = change(event, this.reservedSeats(state, id))
+        if (Result.isFailure(changed)) {
+          return changed
+        }
+        if (!this.references.venues.has(changed.value.data.venueId)) {
+          return this.invalidReference()
+        }
+        state.events[index] = changed.value
         return changed
-      }
-      if (!this.references.venues.has(changed.value.data.venueId)) {
-        return this.invalidReference()
-      }
-      state.events[index] = changed.value
-      return changed
-    })
+      }),
+    )
   }
 
   async reserve(
@@ -164,37 +178,43 @@ export class ValkeyEventRepository implements EventRepository {
       reservedSeats: number,
     ) => Result<Reservation, ApplicationError>,
   ): Promise<Result<Reservation, ApplicationError>> {
-    return this.mutate((state) => {
-      const event = state.events.find(({ data }) => data.id === eventId)
-      if (!event) {
-        return Result.fail(new NotFound('Event not found'))
-      }
-      const result = create(event, this.reservedSeats(state, eventId))
-      if (Result.isFailure(result)) {
+    return repositorySpan('EventRepository.reserve', () =>
+      this.mutate((state) => {
+        const event = state.events.find(({ data }) => data.id === eventId)
+        if (!event) {
+          return Result.fail(new NotFound('Event not found'))
+        }
+        const result = create(event, this.reservedSeats(state, eventId))
+        if (Result.isFailure(result)) {
+          return result
+        }
+        if (!this.references.users.has(result.value.data.userId)) {
+          return this.invalidReference()
+        }
+        if (
+          state.reservations.some(
+            ({ data }) => data.id === result.value.data.id,
+          )
+        ) {
+          throw new Error('Duplicate reservation ID')
+        }
+        state.reservations.push(result.value)
         return result
-      }
-      if (!this.references.users.has(result.value.data.userId)) {
-        return this.invalidReference()
-      }
-      if (
-        state.reservations.some(({ data }) => data.id === result.value.data.id)
-      ) {
-        throw new Error('Duplicate reservation ID')
-      }
-      state.reservations.push(result.value)
-      return result
-    })
+      }),
+    )
   }
 
   async listReservations(userId: UserId) {
-    const { state } = await this.read()
-    return state.reservations
-      .filter(({ data }) => data.userId === userId)
-      .sort(
-        (a, b) =>
-          a.data.createdAt.getTime() - b.data.createdAt.getTime() ||
-          a.data.id.localeCompare(b.data.id),
-      )
+    return repositorySpan('EventRepository.listReservations', async () => {
+      const { state } = await this.read()
+      return state.reservations
+        .filter(({ data }) => data.userId === userId)
+        .sort(
+          (a, b) =>
+            a.data.createdAt.getTime() - b.data.createdAt.getTime() ||
+            a.data.id.localeCompare(b.data.id),
+        )
+    })
   }
 
   async cancelReservation(
@@ -202,24 +222,28 @@ export class ValkeyEventRepository implements EventRepository {
     userId: UserId,
     change: (reservation: Reservation) => Result<Reservation, ApplicationError>,
   ): Promise<Result<Reservation, ApplicationError>> {
-    return this.mutate((state) => {
-      const index = state.reservations.findIndex(
-        ({ data }) => data.id === id && data.userId === userId,
-      )
-      const reservation = state.reservations[index]
-      if (!reservation) {
-        return Result.fail(new NotFound('Reservation not found'))
-      }
-      const changed = change(reservation)
-      if (Result.isSuccess(changed)) {
-        state.reservations[index] = changed.value
-      }
-      return changed
-    })
+    return repositorySpan('EventRepository.cancelReservation', () =>
+      this.mutate((state) => {
+        const index = state.reservations.findIndex(
+          ({ data }) => data.id === id && data.userId === userId,
+        )
+        const reservation = state.reservations[index]
+        if (!reservation) {
+          return Result.fail(new NotFound('Reservation not found'))
+        }
+        const changed = change(reservation)
+        if (Result.isSuccess(changed)) {
+          state.reservations[index] = changed.value
+        }
+        return changed
+      }),
+    )
   }
 
   async userExists(id: UserId) {
-    return this.references.users.has(id)
+    return repositorySpan('EventRepository.userExists', () =>
+      this.references.users.has(id),
+    )
   }
 
   private invalidReference(): Result<never, ApplicationError> {
@@ -237,7 +261,7 @@ export class ValkeyEventRepository implements EventRepository {
   }
 
   private async read(): Promise<{ raw: string | null; state: State }> {
-    const raw = await this.client.get(this.key)
+    const raw = await valkeyCommand('GET', () => this.client.get(this.key))
     if (raw === null) {
       return { raw, state: { events: [], reservations: [] } }
     }
@@ -291,13 +315,15 @@ export class ValkeyEventRepository implements EventRepository {
         })),
       })
       signal?.throwIfAborted()
-      const saved: unknown = await this.client.send('EVAL', [
-        compareAndSet,
-        '1',
-        this.key,
-        raw ?? '',
-        next,
-      ])
+      const saved: unknown = await valkeyCommand('EVAL', () =>
+        this.client.send('EVAL', [
+          compareAndSet,
+          '1',
+          this.key,
+          raw ?? '',
+          next,
+        ]),
+      )
       if (saved === 1) {
         return Option.some(result)
       }

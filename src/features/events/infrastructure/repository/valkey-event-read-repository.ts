@@ -1,4 +1,8 @@
 import type { RedisClient } from 'bun'
+import {
+  repositorySpan,
+  valkeyCommand,
+} from '#/platform/observability/spans.ts'
 import * as v from 'valibot'
 import type {
   EventFilter,
@@ -13,7 +17,7 @@ import {
 import { matchesEventFilter } from '#/features/events/infrastructure/repository/event-predicates.ts'
 import { Option } from '#/shared-kernel/option.ts'
 
-const snapshot = v.pipe(
+const eventSnapshotSchema = v.pipe(
   v.string(),
   v.parseJson(),
   v.array(
@@ -37,30 +41,40 @@ export class ValkeyEventReadRepository implements EventProjectionRepository {
   ) {}
 
   async replaceEvents(events: readonly Event[]): Promise<void> {
-    await this.client.set(this.key, JSON.stringify(events.map(eventToEntity)))
+    await repositorySpan(
+      'EventProjectionRepository.replaceEvents',
+      async () => {
+        const snapshot = JSON.stringify(events.map(eventToEntity))
+        await valkeyCommand('SET', () => this.client.set(this.key, snapshot))
+      },
+    )
   }
 
   async listEvents(filter: EventFilter) {
-    return (await this.read())
-      .filter(matchesEventFilter(filter))
-      .sort(
-        (a, b) =>
-          a.data.startsAt.getTime() - b.data.startsAt.getTime() ||
-          a.data.id.localeCompare(b.data.id),
-      )
+    return repositorySpan('EventProjectionRepository.listEvents', async () =>
+      (await this.read())
+        .filter(matchesEventFilter(filter))
+        .sort(
+          (a, b) =>
+            a.data.startsAt.getTime() - b.data.startsAt.getTime() ||
+            a.data.id.localeCompare(b.data.id),
+        ),
+    )
   }
 
   async findEvent(id: EventId) {
-    return Option.fromNullable(
-      (await this.read()).find(({ data }) => data.id === id),
+    return repositorySpan('EventProjectionRepository.findEvent', async () =>
+      Option.fromNullable(
+        (await this.read()).find(({ data }) => data.id === id),
+      ),
     )
   }
 
   private async read(): Promise<Event[]> {
-    const raw = await this.client.get(this.key)
+    const raw = await valkeyCommand('GET', () => this.client.get(this.key))
     if (raw === null) {
       return []
     }
-    return v.parse(snapshot, raw).map(eventToDomain)
+    return v.parse(eventSnapshotSchema, raw).map(eventToDomain)
   }
 }

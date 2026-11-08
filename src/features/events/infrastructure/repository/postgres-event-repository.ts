@@ -1,4 +1,10 @@
 import { SQL } from 'bun'
+import { loggedSql } from '#/platform/observability/logged-sql.ts'
+import {
+  inSpan,
+  postgresQuery,
+  repositorySpan,
+} from '#/platform/observability/spans.ts'
 import type {
   ApplicationError,
   EventFilter,
@@ -38,34 +44,51 @@ export class PostgresEventRepository implements EventRepository {
     work: (tx: SQL) => Promise<Value>,
   ): Promise<Value> {
     // The Unit of Work owns BEGIN/COMMIT. Never open a second transaction.
-    return this.transactionScoped ? work(this.sql) : this.sql.begin(work)
+    return this.transactionScoped
+      ? work(this.sql)
+      : inSpan('postgres.transaction', () => this.sql.begin(work))
   }
 
   async listEvents(filter: EventFilter) {
-    const rows = await this.sql<EventEntity[]>`
+    return repositorySpan('EventRepository.listEvents', async () => {
+      const rows = await postgresQuery(
+        'SELECT',
+        'events.events',
+        () => loggedSql(this.sql)<EventEntity[]>`
       SELECT id, title, category, starts_at, capacity, venue_id FROM events.events
       WHERE (${filter.category ?? null}::text IS NULL OR category = ${filter.category ?? null})
         AND (${filter.after ?? null}::timestamptz IS NULL OR starts_at > ${filter.after ?? null})
-      ORDER BY starts_at, id`
-    return rows.map(eventToDomain)
+      ORDER BY starts_at, id`,
+      )
+      return rows.map(eventToDomain)
+    })
   }
 
   async findEvent(id: EventId): Promise<Option<Event>> {
-    const rows = await this.sql.unsafe<EventEntity[]>(
-      `SELECT ${eventColumns} FROM events.events WHERE id = $1`,
-      [id],
-    )
-    return Option.map(Option.fromNullable(rows[0]), eventToDomain)
+    return repositorySpan('EventRepository.findEvent', async () => {
+      const rows = await postgresQuery('SELECT', 'events.events', () =>
+        loggedSql(this.sql).unsafe<EventEntity[]>(
+          `SELECT ${eventColumns} FROM events.events WHERE id = $1`,
+          [id],
+        ),
+      )
+      return Option.map(Option.fromNullable(rows[0]), eventToDomain)
+    })
   }
 
   async createEvent(event: Event): Promise<Result<Event, ApplicationError>> {
-    const entity = eventToEntity(event)
-    return this.write(async () => {
-      await this
-        .sql`INSERT INTO events.events (id, title, category, starts_at, capacity, venue_id)
-        VALUES (${entity.id}, ${entity.title}, ${entity.category}, ${entity.starts_at}, ${entity.capacity}, ${entity.venue_id})`
-      return Result.succeed(event)
-    })
+    return repositorySpan('EventRepository.createEvent', () =>
+      this.write(async () => {
+        const entity = eventToEntity(event)
+        await postgresQuery(
+          'INSERT',
+          'events.events',
+          () => loggedSql(this.sql)`INSERT INTO events.events (id, title, category, starts_at, capacity, venue_id)
+        VALUES (${entity.id}, ${entity.title}, ${entity.category}, ${entity.starts_at}, ${entity.capacity}, ${entity.venue_id})`,
+        )
+        return Result.succeed(event)
+      }),
+    )
   }
 
   async updateEvent(
@@ -75,21 +98,27 @@ export class PostgresEventRepository implements EventRepository {
       reservedSeats: number,
     ) => Result<Event, ApplicationError>,
   ): Promise<Result<Event, ApplicationError>> {
-    return this.write(() =>
-      this.transaction(async (tx) => {
-        const found = await this.lockEvent(tx, id)
-        if (Option.isNone(found)) {
-          return Result.fail(new NotFound('Event not found'))
-        }
-        const updated = change(found.value, await this.reservedSeats(tx, id))
-        if (Result.isFailure(updated)) {
+    return repositorySpan('EventRepository.updateEvent', () =>
+      this.write(() =>
+        this.transaction(async (tx) => {
+          const found = await this.lockEvent(tx, id)
+          if (Option.isNone(found)) {
+            return Result.fail(new NotFound('Event not found'))
+          }
+          const updated = change(found.value, await this.reservedSeats(tx, id))
+          if (Result.isFailure(updated)) {
+            return updated
+          }
+          const entity = eventToEntity(updated.value)
+          await postgresQuery(
+            'UPDATE',
+            'events.events',
+            () => loggedSql(tx)`UPDATE events.events SET title = ${entity.title}, category = ${entity.category}, starts_at = ${entity.starts_at},
+          capacity = ${entity.capacity}, venue_id = ${entity.venue_id} WHERE id = ${id}`,
+          )
           return updated
-        }
-        const entity = eventToEntity(updated.value)
-        await tx`UPDATE events.events SET title = ${entity.title}, category = ${entity.category}, starts_at = ${entity.starts_at},
-          capacity = ${entity.capacity}, venue_id = ${entity.venue_id} WHERE id = ${id}`
-        return updated
-      }),
+        }),
+      ),
     )
   }
 
@@ -100,33 +129,43 @@ export class PostgresEventRepository implements EventRepository {
       reservedSeats: number,
     ) => Result<Reservation, ApplicationError>,
   ): Promise<Result<Reservation, ApplicationError>> {
-    return this.write(() =>
-      this.transaction(async (tx) => {
-        const found = await this.lockEvent(tx, eventId)
-        if (Option.isNone(found)) {
-          return Result.fail(new NotFound('Event not found'))
-        }
-        const result = create(
-          found.value,
-          await this.reservedSeats(tx, eventId),
-        )
-        if (Result.isFailure(result)) {
+    return repositorySpan('EventRepository.reserve', () =>
+      this.write(() =>
+        this.transaction(async (tx) => {
+          const found = await this.lockEvent(tx, eventId)
+          if (Option.isNone(found)) {
+            return Result.fail(new NotFound('Event not found'))
+          }
+          const result = create(
+            found.value,
+            await this.reservedSeats(tx, eventId),
+          )
+          if (Result.isFailure(result)) {
+            return result
+          }
+          const d = reservationToEntity(result.value)
+          await postgresQuery(
+            'INSERT',
+            'events.reservations',
+            () => loggedSql(tx)`INSERT INTO events.reservations (id, event_id, user_id, quantity, created_at)
+          VALUES (${d.id}, ${d.event_id}, ${d.user_id}, ${d.quantity}, ${d.created_at})`,
+          )
           return result
-        }
-        const d = reservationToEntity(result.value)
-        await tx`INSERT INTO events.reservations (id, event_id, user_id, quantity, created_at)
-          VALUES (${d.id}, ${d.event_id}, ${d.user_id}, ${d.quantity}, ${d.created_at})`
-        return result
-      }),
+        }),
+      ),
     )
   }
 
   async listReservations(userId: UserId) {
-    const rows = await this.sql.unsafe<Record<string, unknown>[]>(
-      `SELECT ${reservationColumns} FROM events.reservations WHERE user_id = $1 ORDER BY created_at, id`,
-      [userId],
-    )
-    return rows.map(reservationFromRow)
+    return repositorySpan('EventRepository.listReservations', async () => {
+      const rows = await postgresQuery('SELECT', 'events.reservations', () =>
+        loggedSql(this.sql).unsafe<Record<string, unknown>[]>(
+          `SELECT ${reservationColumns} FROM events.reservations WHERE user_id = $1 ORDER BY created_at, id`,
+          [userId],
+        ),
+      )
+      return rows.map(reservationFromRow)
+    })
   }
 
   async cancelReservation(
@@ -134,46 +173,68 @@ export class PostgresEventRepository implements EventRepository {
     userId: UserId,
     change: (reservation: Reservation) => Result<Reservation, ApplicationError>,
   ): Promise<Result<Reservation, ApplicationError>> {
-    return this.transaction(async (tx) => {
-      const rows = await tx.unsafe<Record<string, unknown>[]>(
-        `SELECT ${reservationColumns} FROM events.reservations WHERE id = $1 AND user_id = $2 FOR UPDATE`,
-        [id, userId],
-      )
-      const found = Option.fromNullable(rows[0])
-      if (Option.isNone(found)) {
-        return Result.fail(new NotFound('Reservation not found'))
-      }
-      const updated = change(reservationFromRow(found.value))
-      if (Result.isFailure(updated)) {
+    return repositorySpan('EventRepository.cancelReservation', () =>
+      this.transaction(async (tx) => {
+        const rows = await postgresQuery('SELECT', 'events.reservations', () =>
+          loggedSql(tx).unsafe<Record<string, unknown>[]>(
+            `SELECT ${reservationColumns} FROM events.reservations WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+            [id, userId],
+          ),
+        )
+        const found = Option.fromNullable(rows[0])
+        if (Option.isNone(found)) {
+          return Result.fail(new NotFound('Reservation not found'))
+        }
+        const updated = change(reservationFromRow(found.value))
+        if (Result.isFailure(updated)) {
+          return updated
+        }
+        const entity = reservationToEntity(updated.value)
+        const cancelledAt = Option.getOrNull(entity.cancelled_at)
+        await postgresQuery(
+          'UPDATE',
+          'events.reservations',
+          () =>
+            loggedSql(tx)`UPDATE events.reservations SET cancelled_at = ${cancelledAt} WHERE id = ${id}`,
+        )
         return updated
-      }
-      const entity = reservationToEntity(updated.value)
-      const cancelledAt = Option.getOrNull(entity.cancelled_at)
-      await tx`UPDATE events.reservations SET cancelled_at = ${cancelledAt} WHERE id = ${id}`
-      return updated
-    })
+      }),
+    )
   }
 
   async userExists(id: UserId) {
-    const rows = await this.sql<
-      { exist: boolean }[]
-    >`SELECT EXISTS (SELECT id FROM events.users WHERE id = ${id}) as exist`
-    return rows[0]!.exist
+    return repositorySpan('EventRepository.userExists', async () => {
+      const rows = await postgresQuery(
+        'SELECT',
+        'events.users',
+        () =>
+          loggedSql(this.sql)<
+            { exist: boolean }[]
+          >`SELECT EXISTS (SELECT id FROM events.users WHERE id = ${id}) as exist`,
+      )
+      return rows[0]!.exist
+    })
   }
 
   private async lockEvent(tx: SQL, id: EventId): Promise<Option<Event>> {
-    const rows = await tx.unsafe<EventEntity[]>(
-      `SELECT ${eventColumns} FROM events.events WHERE id = $1 FOR UPDATE`,
-      [id],
+    const rows = await postgresQuery('SELECT', 'events.events', () =>
+      loggedSql(tx).unsafe<EventEntity[]>(
+        `SELECT ${eventColumns} FROM events.events WHERE id = $1 FOR UPDATE`,
+        [id],
+      ),
     )
     return Option.map(Option.fromNullable(rows[0]), eventToDomain)
   }
 
   private async reservedSeats(tx: SQL, eventId: EventId): Promise<number> {
-    const [row] = await tx<
-      { seats: number }[]
-    >`SELECT COALESCE(SUM(quantity), 0)::int AS seats
-      FROM events.reservations WHERE event_id = ${eventId} AND cancelled_at IS NULL`
+    const [row] = await postgresQuery(
+      'SELECT',
+      'events.reservations',
+      () => loggedSql(tx)<
+        { seats: number }[]
+      >`SELECT COALESCE(SUM(quantity), 0)::int AS seats
+      FROM events.reservations WHERE event_id = ${eventId} AND cancelled_at IS NULL`,
+    )
     return row.seats
   }
 
