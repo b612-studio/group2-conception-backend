@@ -1,5 +1,5 @@
 import type { CommandHandler } from '#/shared-kernel/command-handler.ts'
-import type { ApplicationError } from '#/features/events/application/ports.ts'
+import type { ApplicationError, IndempotanceKey } from '#/features/events/application/ports.ts'
 import type { DomainEvent } from '#/features/events/contracts/events.ts'
 import type { EventEnvelope } from '#/shared-kernel/event-envelope.ts'
 import {
@@ -18,10 +18,14 @@ import type {
   EventsUnitOfWork,
   IdGenerator,
 } from '#/features/events/application/ports.ts'
+import { message } from 'valibot';
+import { Conflict } from '../../domain/errors';
+
 
 export interface ReserveEventCommand {
   eventId: EventId
   userId: UserId
+  indempotanceKey: IndempotanceKey
   quantity: number
 }
 
@@ -33,9 +37,14 @@ export class ReserveEventUseCase implements CommandHandler<
     private readonly unitOfWork: EventsUnitOfWork,
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
-  ) {}
+    private readonly keysIndex: Set<string>
+  ) { }
 
   async execute(input: ReserveEventCommand) {
+    if (this.keysIndex.has(input.indempotanceKey)) {
+      return Result.fail(new Conflict("IndempotanceKey already in process"));
+    }
+    this.keysIndex.add(input.indempotanceKey)
     return this.unitOfWork.run(async ({ events, outbox }) => {
       const result = await events.reserve(input.eventId, (event, seats) => {
         const now = this.clock.now()

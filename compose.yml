@@ -30,6 +30,25 @@ services:
       timeout: 5s
       retries: 10
 
+  mongodb:
+    image: mongo:8.0
+    ports:
+      - '127.0.0.1:${MONGODB_PORT:-57017}:27017'
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'mongosh',
+          '--quiet',
+          '--eval',
+          'db.adminCommand({ ping: 1 }).ok === 1 ? quit(0) : quit(1)',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   adminer:
     image: adminer:5
     ports:
@@ -43,3 +62,4 @@ services:
 volumes:
   postgres_data:
   valkey_data:
+  mongodb_data:

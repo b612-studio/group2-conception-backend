@@ -1,6 +1,7 @@
 import type { Event } from '#/features/events/domain/event.ts'
 import type { Reservation } from '#/features/events/domain/reservation.ts'
 import type {
+  Brand,
   EventId,
   ReservationId,
   UserId,
@@ -29,6 +30,8 @@ export interface EventReadRepository {
 
 export interface EventProjectionRepository extends EventReadRepository {
   replaceEvents(events: readonly Event[]): Promise<void>
+  // Snapshot-only adapters fall back to replaceEvents on delivery.
+  upsertEvent?(event: Event): Promise<void>
 }
 
 // Expected failures are values; infrastructure faults reject the promise.
@@ -89,3 +92,5 @@ export interface Clock {
 export interface IdGenerator {
   next<Id>(): Id
 }
+
+export type IndempotanceKey = Brand<string, 'IndempotanceKey'>

@@ -17,7 +17,7 @@ export type EventInput = Omit<EventData, 'id' | 'capacity'> & {
 export type EventCreationData = EventInput & { id: EventId }
 
 export class Event {
-  private constructor(readonly data: Readonly<EventData>) {}
+  private constructor(readonly data: Readonly<EventData>) { }
 
   static create(data: EventCreationData): Result<Event, InvalidInput> {
     if (!data.title.trim() || !data.category.trim()) {

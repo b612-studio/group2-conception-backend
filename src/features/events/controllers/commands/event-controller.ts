@@ -9,7 +9,7 @@ import type { EventId, ReservationId } from '#/features/events/domain/ids.ts'
 import { Option } from '#/shared-kernel/option.ts'
 import { Result } from '#/shared-kernel/result.ts'
 import { requestUser, requestViewer } from '#/features/events/request.ts'
-import type { Clock } from '#/features/events/application/ports.ts'
+import type { Clock, IndempotanceKey } from '#/features/events/application/ports.ts'
 import {
   httpError,
   httpFailure,
@@ -20,6 +20,7 @@ import {
   presentReservationResource,
 } from '#/features/events/presentation/resources.ts'
 import { HttpStatusCode } from '#/platform/http/http-code.ts'
+import { randomBytes } from 'crypto';
 
 export function createEventCommandController({
   identity,
@@ -78,9 +79,10 @@ export function createEventCommandController({
       if (Result.isFailure(user)) {
         return httpFailure(context, user.error)
       }
+      const indempotanceKey = randomBytes(16).toString() as IndempotanceKey
       return httpResult(
         context,
-        await reserve.execute({ eventId, userId: user.value, quantity }),
+        await reserve.execute({ eventId, indempotanceKey, userId: user.value, quantity }),
         presentReservationResource,
         HttpStatusCode.Created,
       )

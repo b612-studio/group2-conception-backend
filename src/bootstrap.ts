@@ -10,8 +10,9 @@ import { PostgresIdentityRepository } from '#/features/identity/infrastructure/p
 import { createContainer } from '#/composition-root.ts'
 import { createPersistence } from '#/features/events/infrastructure/persistence.ts'
 import { TOKEN } from '#/platform/di/tokens.ts'
-import { RedisClient, SQL } from 'bun'
-import { ValkeyEventReadRepository } from '#/features/events/infrastructure/repository/valkey-event-read-repository.ts'
+import { SQL } from 'bun'
+import { MongoClient } from 'mongodb'
+import { MongoDBEventReadRepository } from '#/features/events/infrastructure/repository/mongodb-read-event-repository.ts'
 import { PostgresNotificationRepository } from '#/features/notifications/infrastructure/postgres-notification-repository.ts'
 
 const applicationSecretKey = v.parse(
@@ -32,12 +33,23 @@ const persistence = createPersistence(
 const notificationSql = new SQL(
   process.env.DATABASE_URL ?? 'postgres://events:events@localhost:55432/events',
 )
-const readModelClient = new RedisClient(
-  process.env.VALKEY_URL ?? 'redis://localhost:56379',
+const readModelClient = new MongoClient(
+  process.env.MONGODB_URL ?? 'mongodb://127.0.0.1:57017/events_read_model',
 )
-const readRepository = new ValkeyEventReadRepository(readModelClient)
+const readRepository = new MongoDBEventReadRepository(readModelClient.db())
 // Load all stored events into the read model before accepting requests.
-await readRepository.replaceEvents(await persistence.repository.listEvents({}))
+try {
+  await readRepository.replaceEvents(
+    await persistence.repository.listEvents({}),
+  )
+} catch (error) {
+  await Promise.allSettled([
+    readModelClient.close(),
+    Promise.resolve().then(() => persistence.close()),
+    notificationSql.close(),
+  ])
+  throw error
+}
 const rateLimitConfig: RateLimitConfig = {
   key: rateLimitByUserId((c) => getConnInfo(c).remote.address),
   bucket: tokenBucket(100, Duration.makeUnsafe(60_000)),
@@ -64,7 +76,7 @@ async function shutdown() {
   await server.stop()
   container.resolve(TOKEN.NotificationSubscription)()
   container.resolve(TOKEN.EventReadModelSubscription)()
-  readModelClient.close()
+  await readModelClient.close()
   await persistence.close()
   await notificationSql.close()
   process.exit(0)

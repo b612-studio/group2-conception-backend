@@ -17,8 +17,10 @@ docker compose up -d --wait
 bun run dev
 ```
 
+If you use Kiri, run `kiri compose up -d --wait` instead of the Docker command above.
+
 The API listens on http://127.0.0.1:3000. PostgreSQL is available on
-localhost:55432, and Adminer on http://localhost:8080.
+localhost:55432, MongoDB on localhost:57017, and Adminer on http://localhost:8080.
 
 ## Environment variables
 
@@ -43,11 +45,15 @@ with the previous unkeyed SHA-256 hashing also require a new login.
 | `POSTGRES_PORT`    | `55432`                                           | Host port Docker Compose publishes for PostgreSQL.                                 |
 | `VALKEY_URL`       | `redis://localhost:56379`                         | Connection URL for either Valkey adapter.                                          |
 | `VALKEY_PORT`      | `56379`                                           | Host port Docker Compose publishes for Valkey.                                     |
+| `MONGODB_URL`      | `mongodb://127.0.0.1:57017/events_read_model`     | Connection URL and database name for the MongoDB event read model.                 |
+| `MONGODB_PORT`     | `57017`                                           | Host port Docker Compose publishes for MongoDB.                                    |
 | `ADMINER_PORT`     | `8080`                                            | Host port for the Adminer database interface.                                      |
 
 If you change `POSTGRES_PORT`, update the port in `DATABASE_URL` too. The same
-applies to `VALKEY_PORT` and `VALKEY_URL`. Restart the API after changing its
-configuration, and rerun `docker compose up -d --wait` after changing service ports.
+applies to the Valkey and MongoDB port and URL pairs. The Compose MongoDB service
+has no authentication and binds to loopback for local development. Restart the API
+after changing its configuration, and rerun `docker compose up -d --wait` after
+changing service ports.
 No model API key is needed.
 
 ## Rate limiting
@@ -195,7 +201,7 @@ Events commands -> Events domain -> authoritative repository, PostgreSQL by defa
            |                              |
 Events read-model subscriber    Notifications translation adapter
            |                              |
-Valkey event read model          PostgreSQL notifications.inbox
+MongoDB event read model         PostgreSQL notifications.inbox
            |                              |
 Events queries                  Notifications queries
 ```
@@ -204,25 +210,26 @@ Events queries                  Notifications queries
 
 The running API uses two event repositories. `EVENT_REPOSITORY` selects the
 write-side adapter. `GET /events` and `GET /events/{eventId}` use a separate
-`ValkeyEventReadRepository`, connected through `VALKEY_URL`. Identity, reservation
-queries and all commands still use the authoritative repository. A stale read
-model cannot bypass capacity checks.
+`MongoDBEventReadRepository`, connected through `MONGODB_URL`. The official
+MongoDB driver runs the filters and sorting in the database. Identity, reservation
+queries and commands do not use this projection. A stale read model cannot
+bypass capacity checks.
 
-The Events read-model subscriber listens to `EventCreated` and `EventUpdated`.
-It reloads committed events and atomically replaces a Valkey snapshot at
-`events:read-model:v1`. Refreshes are serialized within the process, and replayed
-messages reload current state rather than overwriting it with old payloads.
-Startup rebuilds the projection before accepting traffic, including seeded events.
-Tests and embedded callers can omit `readRepository` to use one repository.
+The [Events read-model subscriber](src/features/events/infrastructure/events-read-model-subscriber.ts)
+listens to `EventCreated` and `EventUpdated`. It reloads only the event named in
+the message and upserts its current committed state into MongoDB. Replaying a
+message does not duplicate the event or overwrite it with an old payload.
+At startup, the API reconciles the full projection with the write store before
+accepting traffic, including seeded events. Tests and embedded callers can omit
+`readRepository` to use one repository.
 
-This lesson runs in one process. Each refresh scans and replaces the full
-event list, so it is not suitable for large datasets. The bus currently awaits its
-subscribers, but projection writes are separate from the authoritative commit.
-Subscriber failures are logged and do not roll back commands. A subsequent event
-refresh or application restart repairs the snapshot. There is no durable retry,
-periodic repair or cross-process ordering guarantee. Use an outbox and an ordered
-projection worker before running multiple API processes or requiring recovery
-without a restart.
+The lesson uses a manual PostgreSQL outbox drain. Run `bun run outbox:drain`
+after creating or updating an event to publish pending messages and refresh
+MongoDB. The dispatcher leaves a message pending if delivery fails, so running
+the command again retries it without rerunning the original command.
+
+Run only one drain at a time and don't overlap it with API startup. The projection
+serializes updates within a process, not across processes.
 
 Notifications already has its own PostgreSQL inbox read model. Each row in
 `notifications.inbox` contains the recipient, subject, body, booking reference,
@@ -241,7 +248,7 @@ Notifications' [subscriber](src/features/notifications/infrastructure/events-sub
 translates reservation facts into local `BookingNotice` inputs. Creation and update
 facts are logged but do not produce inbox items. The Notifications subscriber
 never loads an Events entity or calls its repository. The separate read-model
-subscriber belongs to Events and only updates its own Valkey projection.
+subscriber belongs to Events and only updates its own MongoDB projection.
 
 Events and Notifications model the same person differently:
 
@@ -499,7 +506,7 @@ are not overwritten, and `backups/` is ignored by Git.
 
 **Restore replaces objects included in the backup and their data.** Stop the API
 and other writers first. Only restore trusted SQL. Errors roll back the restore.
-Restart the API afterward to rebuild its Valkey read model.
+Restart the API afterward to rebuild its MongoDB read model.
 
 ### Inspect the database
 
@@ -530,7 +537,7 @@ migration above. It updates identifiers and foreign keys in one transaction and
 prints the old-to-new mapping. It preserves existing UUID-v7 records.
 
 For disposable lesson data, you can reset the volumes instead. **This deletes all
-local PostgreSQL and Valkey records.**
+local PostgreSQL, Valkey and MongoDB records.**
 
 ```sh
 docker compose down -v

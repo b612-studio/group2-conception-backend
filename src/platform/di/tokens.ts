@@ -25,14 +25,12 @@ import type { NotificationService } from '#/features/notifications/application/n
 import type { NotificationRepository } from '#/features/notifications/application/ports.ts'
 import type { EventBus, Unsubscribe } from '#/shared-kernel/event-bus.ts'
 import { createToken } from '#/platform/di/token.ts'
-import { MongoDBEventReadRepository } from '#/features/events/infrastructure/repository/mongodb-read-event-repository.ts';
 
 export const TOKEN = {
   EventsUnitOfWork: createToken<EventsUnitOfWork>('EventsUnitOfWork'),
   OutboxDispatcher: createToken<OutboxDispatcher>('OutboxDispatcher'),
   EventRepository: createToken<EventRepository>('EventRepository'),
   EventReadRepository: createToken<EventReadRepository>('EventReadRepository'),
-  MongoDBEventReadRepository: createToken<MongoDBEventReadRepository>('MongoDBEventReadRepository'),
   EventReadModelSubscription: createToken<Unsubscribe>(
     'EventReadModelSubscription',
   ),
