@@ -48,6 +48,7 @@ import {
   rateLimitMiddleware,
   type RateLimitConfig,
 } from '#/platform/rate-limit/http/rate-limit-middleware.ts'
+import { MongoDBEventReadRepository } from './features/events/infrastructure/repository/mongodb-read-event-repository';
 
 export interface ContainerOptions {
   applicationSecretKey: string
@@ -69,6 +70,7 @@ export function createContainer(options: ContainerOptions): Container {
   const container = new Container()
   container
     .singleton(TOKEN.EventRepository, () => options.repository)
+    .singleton(TOKEN.MongoDBEventReadRepository, () => new MongoDBEventReadRepository())
     .singleton(TOKEN.EventsUnitOfWork, () => {
       if (options.unitOfWork) {
         return options.unitOfWork
@@ -106,7 +108,7 @@ export function createContainer(options: ContainerOptions): Container {
     )
     .singleton(TOKEN.EventReadModelSubscription, (c) => {
       if (!options.readRepository) {
-        return () => {}
+        return () => { }
       }
       return createEventsReadModelSubscriber(
         options.repository,
